@@ -123,7 +123,7 @@ Interactive docs at **http://localhost:8000/docs** while the backend runs.
 
 ---
 
-## 🗺️ Roadmap (post‑MVP)
+## 🗺️ Roadmap (post‑MVP) 
 
 - Decouple "rate" from "mark watched" (optional)
 - "Not interested" management view + exclusion decay
