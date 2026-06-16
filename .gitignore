@@ -1,0 +1,49 @@
+# ─────────────────────────────────────────────────────────────
+# Movie Night AI — root .gitignore
+# (frontend/ has its own .gitignore from create-next-app)
+# ─────────────────────────────────────────────────────────────
+
+# Secrets / environment — NEVER commit real keys
+.env
+.env.*
+!.env.example
+frontend/.env.local
+frontend/.env*.local
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# SQLite database (runtime data, recreated on first launch)
+*.db
+*.sqlite
+*.sqlite3
+movie_night.db
+
+# Node / Next.js (belt-and-suspenders; frontend/.gitignore also covers these)
+node_modules/
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+next-env.d.ts
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Claude Code local settings
+.claude/

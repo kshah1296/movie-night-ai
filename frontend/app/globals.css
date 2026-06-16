@@ -1,0 +1,564 @@
+@import "tailwindcss";
+
+:root {
+  --background: #09090b;
+  --foreground: #fafafa;
+  /* Design tokens — UI/UX redesign */
+  --bg: #09090b;
+  --surface: #18181b;
+  --surface-2: #27272a;
+  --border: #27272a;
+  --border-strong: #3f3f46;
+  --text-1: #fafafa;
+  --text-2: #a1a1aa;
+  --text-3: #8b8b96; /* tertiary floor — ≥5:1 on --bg (replaces #71717a/#52525b in running text) */
+  --accent: #a855f7;
+  --danger: #f87171;
+  --gold: #fbbf24;
+  --gradient: linear-gradient(135deg, #a855f7, #ec4899, #f97316);
+  --gradient-2: linear-gradient(135deg, #a855f7, #ec4899);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* Task 10 — ambient brand glow */
+body::before {
+  content: "";
+  position: fixed;
+  top: -200px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 900px;
+  height: 500px;
+  background: radial-gradient(ellipse at center,
+    rgba(168, 85, 247, 0.12) 0%,
+    rgba(236, 72, 153, 0.06) 40%,
+    transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, #a855f7, #ec4899, #f97316);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Task 11 — merged duplicate .gradient-border blocks */
+.gradient-border {
+  position: relative;
+  background: #18181b;
+  border-radius: 0.75rem;
+  transition: transform 0.15s;
+}
+
+.gradient-border::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #a855f7, #ec4899, #f97316);
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.gradient-border:hover::before {
+  opacity: 1;
+}
+
+.gradient-border:hover {
+  transform: translateY(-2px);
+}
+
+/* Task 4 — poster zoom on card hover */
+.poster-frame img {
+  transition: transform 0.3s ease;
+}
+
+.gradient-border:hover .poster-frame img {
+  transform: scale(1.06);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #a855f7, #ec4899);
+  color: white;
+  padding: 0.5rem 1.25rem;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  transition: opacity 0.15s, transform 0.15s;
+  cursor: pointer;
+  border: none;
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-secondary {
+  background: #27272a;
+  color: #a1a1aa;
+  padding: 0.5rem 1.25rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  font-size: 0.875rem;
+  transition: background 0.15s, color 0.15s;
+  cursor: pointer;
+  border: none;
+}
+
+.btn-secondary:hover {
+  background: #3f3f46;
+  color: #fafafa;
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Task 5 — chip utility (genre filter buttons) */
+.chip {
+  padding: 0.3rem 0.8rem;
+  min-height: 30px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-2);
+  transition: color 0.15s, border-color 0.15s, background 0.15s, transform 0.1s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.chip:hover {
+  color: #fafafa;
+  border-color: #a855f7;
+}
+
+.chip:active {
+  transform: scale(0.96);
+}
+
+.chip.chip-active {
+  border: 1px solid transparent;
+  background: linear-gradient(135deg, #a855f7, #ec4899);
+  color: white;
+}
+
+.chip.chip-active:hover {
+  color: white;
+  border-color: transparent;
+}
+
+/* Task 5 — tab utility (status filter buttons) */
+.tab {
+  padding: 0.4rem 1rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  background: #27272a;
+  color: #a1a1aa;
+  transition: color 0.15s, background 0.15s, transform 0.1s;
+}
+
+.tab:hover { color: #fafafa; background: #3f3f46; }
+.tab:active { transform: scale(0.96); }
+.tab.tab-active { background: linear-gradient(135deg, #a855f7, #ec4899); color: white; }
+.tab.tab-active:hover { color: white; background: linear-gradient(135deg, #a855f7, #ec4899); }
+
+/* Task 5 — nav link hover */
+.nav-link { transition: color 0.15s, background 0.15s; border-radius: 0.5rem; }
+.nav-link:hover { color: #fafafa !important; background: #27272a; }
+
+/* Search input focus ring */
+.search-input:focus {
+  outline: none;
+  border-color: #a855f7 !important;
+  box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.2);
+}
+
+/* Task 2 — skeleton shimmer */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #18181b 25%, #27272a 50%, #18181b 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: 0.5rem;
+}
+
+/* Task 3 — card entrance */
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.card-in {
+  animation: card-in 0.35s ease-out both;
+}
+
+/* Task 3 — modal animations */
+@keyframes modal-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes modal-pop {
+  from { opacity: 0; transform: scale(0.96) translateY(12px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* Task 6 — star pop micro-interaction */
+@keyframes star-pop {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+
+.star-filled {
+  display: inline-block;
+  animation: star-pop 0.3s ease-out;
+}
+
+/* Task 7 — spinner (moved from inline style tag) */
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid #3f3f46;
+  border-top-color: #a855f7;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 1rem;
+}
+
+.spin-icon { display: inline-block; animation: spin 0.8s linear infinite; }
+
+/* Screen-reader-only text — conveys loading/status without relying on motion (P3-11) */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Task 8 — toast animations */
+@keyframes toast-slide-up {
+  from { opacity: 0; transform: translate(-50%, 0.75rem); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@keyframes toast-slide-down {
+  from { opacity: 1; transform: translate(-50%, 0); }
+  to   { opacity: 0; transform: translate(-50%, 0.75rem); }
+}
+
+/* Task 13 — keyboard focus ring */
+:focus-visible {
+  outline: 2px solid #a855f7;
+  outline-offset: 2px;
+  border-radius: 0.25rem;
+}
+
+/* Task 9 — mobile nav */
+@media (max-width: 520px) {
+  .nav-inner {
+    height: auto !important;
+    flex-wrap: wrap;
+    padding: 0.5rem 1rem !important;
+    row-gap: 0.25rem;
+  }
+  .nav-links {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .nav-links a {
+    padding: 0.35rem 0.5rem !important;
+    font-size: 0.8rem !important;
+  }
+}
+
+/* ── Search / Discover page rebuild ─────────────────────────────── */
+@keyframes drawer-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.filter-drawer {
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  margin-bottom: 0.75rem;
+  animation: drawer-in 0.2s ease-out;
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.filter-row:last-child { margin-bottom: 0; }
+
+.filter-label {
+  color: var(--text-3);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  width: 72px;
+  flex-shrink: 0;
+}
+
+/* On narrow screens, stack the filter label above its chip group (P3-10) */
+@media (max-width: 520px) {
+  .filter-label { width: 100%; margin-bottom: 0.15rem; }
+}
+
+/* Dark pill-shaped sort selector to sit beside .tab buttons */
+.select-dark {
+  background: #18181b;
+  border: 1px solid #3f3f46;
+  color: #fafafa;
+  border-radius: 999px;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.select-dark:focus {
+  outline: none;
+  border-color: #a855f7;
+}
+
+/* Active-filter count badge inside the Filters button */
+.badge-dot {
+  background: linear-gradient(135deg, #a855f7, #ec4899);
+  color: white;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.05rem 0.4rem;
+  margin-left: 0.35rem;
+}
+
+/* When the Filters tab is gradient-active the badge needs contrast */
+.tab.tab-active .badge-dot {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+/* ── Recommendation Quality V2 ─────────────────────────────── */
+
+/* "Not interested" ✕ on rec cards — revealed on card hover, always on touch */
+.dismiss-x {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: rgba(9, 9, 11, 0.92);
+  color: var(--text-2);
+  font-size: 0.72rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+  z-index: 2;
+}
+
+.gradient-border:hover .dismiss-x { opacity: 1; }
+.dismiss-x:hover { color: #f87171; border-color: #f87171; }
+@media (hover: none) { .dismiss-x { opacity: 1; } }
+
+/* Read-only taste pills ("Your taste" strip) */
+.taste-pill {
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  background: #18181b;
+  border: 1px solid #27272a;
+  color: #a1a1aa;
+  white-space: nowrap;
+}
+
+/* Thin divider between mood pills and genre chips in the mode bar */
+.mode-divider {
+  width: 1px;
+  height: 1.25rem;
+  background: #3f3f46;
+  margin: 0 0.35rem;
+  flex-shrink: 0;
+}
+
+/* ── UI/UX redesign system ─────────────────────────────────── */
+
+/* Quiet danger action — the ONLY pattern for Remove buttons */
+.btn-ghost-danger {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-3);
+  padding: 0.3rem 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.btn-ghost-danger:hover {
+  color: var(--danger);
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.08);
+}
+
+/* Single-line horizontally scrollable chip row with edge fade */
+.chip-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  mask-image: linear-gradient(to right, black 0, black calc(100% - 28px), transparent);
+  -webkit-mask-image: linear-gradient(to right, black 0, black calc(100% - 28px), transparent);
+  padding-bottom: 2px;
+}
+
+.chip-row::-webkit-scrollbar { display: none; }
+
+/* Nav: gradient underline marks the active page (replaces the gray pill) */
+.nav-link {
+  position: relative;
+}
+
+.nav-link[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  left: 0.9rem;
+  right: 0.9rem;
+  bottom: 2px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--gradient-2);
+}
+
+/* Search field affordances */
+.search-wrap {
+  position: relative;
+  margin-bottom: 1rem;
+}
+
+.search-wrap .search-icon {
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-3);
+  pointer-events: none;
+  font-size: 0.95rem;
+}
+
+.search-clear {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 0.7rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.search-clear:hover { background: var(--border-strong); color: var(--text-1); }
+
+/* Modal loading skeleton */
+.modal-skel {
+  padding: 1.5rem;
+  display: flex;
+  gap: 1.25rem;
+}
+
+/* Stack the modal header on narrow screens so the title isn't crushed (P3-7) */
+@media (max-width: 480px) {
+  .modal-header { flex-direction: column; gap: 0.85rem; }
+  .modal-header > div:last-child { padding-top: 0 !important; }
+  .modal-header h2 { font-size: 1.2rem !important; }
+}
+
+/* Larger touch targets on coarse pointers (WCAG 2.5.8 — 44px floor) */
+@media (pointer: coarse) {
+  .chip { min-height: 44px; padding: 0.6rem 0.95rem; }
+  .tab { min-height: 44px; }
+  .nav-links a { min-height: 44px; display: inline-flex; align-items: center; }
+  /* Keep the small visual circle but expand the tap area to 44px */
+  .dismiss-x, .search-clear { width: 44px; height: 44px; }
+  .dismiss-x { font-size: 0.85rem; }
+  /* Star rating buttons — bump tap area so 3★ vs 4★ is reliably tappable */
+  .star-btn { padding: 0.5rem 0.4rem !important; }
+}
+
+/* Respect vestibular-motion preferences — kills shimmer, pulse, stagger, spins */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  /* Spinners would otherwise freeze into a static glyph (reads as broken).
+     Swap the rotation for a gentle opacity pulse, which is motion-safe. */
+  .spinner, .spin-icon {
+    animation: rm-pulse 1.2s ease-in-out infinite !important;
+  }
+}
+
+@keyframes rm-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
