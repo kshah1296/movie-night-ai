@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { getRatings, upsertRating, deleteRating, type Rating } from "@/lib/api";
-import { posterUrl } from "@/lib/tmdb";
 import StarRating from "@/components/StarRating";
+import Poster from "@/components/Poster";
 import Toast from "@/components/Toast";
 import { SkeletonGrid } from "@/components/SkeletonCard";
 import PageHeader from "@/components/PageHeader";
@@ -73,37 +72,22 @@ export default function RatingsPage() {
             </EmptyState>
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(320px, 100%), 1fr))", gap: "1.25rem" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(320px, 100%), 1fr))", gap: "var(--space-5)" }}>
             {ratings.map((r, i) => {
-              const poster = posterUrl(r.poster_path);
               return (
                 <div
                   key={r.tmdb_id}
                   className="gradient-border card-in"
                   style={{ animationDelay: `${Math.min(i * 40, 400)}ms` }}
                 >
-                  <div style={{ display: "flex", gap: "1rem", padding: "1rem" }}>
-                    <div
-                      className="poster-frame"
-                      style={{
-                        width: 100, height: 150, borderRadius: "0.5rem", overflow: "hidden",
-                        flexShrink: 0, background: "#27272a",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                      }}
-                    >
-                      {poster ? (
-                        <Image src={poster} alt={r.title} width={100} height={150}
-                          style={{ objectFit: "cover", width: "100%", height: "100%" }} />
-                      ) : (
-                        <span style={{ fontSize: "2rem" }}>🎬</span>
-                      )}
-                    </div>
+                  <div style={{ display: "flex", gap: "var(--space-4)", padding: "var(--space-4)" }}>
+                    <Poster path={r.poster_path} alt={r.title} />
 
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <h3 style={{ fontWeight: 700, fontSize: "0.95rem", marginBottom: "0.15rem", lineHeight: 1.3 }}>
                         {r.title}
                       </h3>
-                      <p style={{ color: "#a1a1aa", fontSize: "0.75rem", marginBottom: "0.6rem" }}>
+                      <p style={{ color: "var(--text-2)", fontSize: "var(--font-xs)", marginBottom: "0.6rem" }}>
                         {r.year} · {r.genres.slice(0, 2).join(", ")}
                       </p>
                       <StarRating value={r.rating} onChange={(n) => handleRatingChange(r, n)} size="sm" />

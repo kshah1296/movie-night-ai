@@ -1,8 +1,7 @@
 "use client";
 
-import Image from "next/image";
 import StarRating from "@/components/StarRating";
-import { posterUrl } from "@/lib/tmdb";
+import Poster from "@/components/Poster";
 
 export interface MovieCardData {
   id: number;
@@ -30,8 +29,6 @@ interface MovieCardProps {
 export default function MovieCard({
   movie, index, rating, inWatchlist, isWatched, onOpen, onRate, onWatchlist, onDismiss,
 }: MovieCardProps) {
-  const poster = posterUrl(movie.poster_path);
-
   return (
     <div
       className="gradient-border card-in"
@@ -48,36 +45,13 @@ export default function MovieCard({
           ✕
         </button>
       )}
-      <div style={{ display: "flex", gap: "1rem", padding: "1rem" }}>
-        <div
-          className="poster-frame"
-          style={{
-            position: "relative", width: 100, height: 150, borderRadius: "0.5rem",
-            overflow: "hidden", flexShrink: 0, background: "#27272a",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}
-        >
-          {poster ? (
-            <Image src={poster} alt={movie.title} width={100} height={150}
-              style={{ objectFit: "cover", width: "100%", height: "100%" }} />
-          ) : (
-            <span style={{ fontSize: "2rem" }}>🎬</span>
-          )}
-          {movie.vote_average > 0 && (
-            <span style={{
-              position: "absolute", bottom: 4, left: 4, background: "rgba(0,0,0,0.75)",
-              color: "#fbbf24", fontSize: "0.65rem", fontWeight: 700,
-              padding: "0.1rem 0.35rem", borderRadius: "999px",
-            }}>
-              ★ {movie.vote_average.toFixed(1)}
-            </span>
-          )}
-        </div>
+      <div style={{ display: "flex", gap: "var(--space-4)", padding: "var(--space-4)" }}>
+        <Poster path={movie.poster_path} alt={movie.title} voteAverage={movie.vote_average} />
 
         <div style={{ flex: 1, minWidth: 0 }}>
           {movie.kicker && (
             <p style={{
-              color: "#a855f7",
+              color: "var(--accent)",
               fontSize: "0.65rem",
               fontWeight: 700,
               textTransform: "uppercase",
@@ -96,14 +70,14 @@ export default function MovieCard({
           }}>
             {movie.title}
           </h3>
-          <p style={{ color: "#a1a1aa", fontSize: "0.75rem", marginBottom: "0.4rem" }}>
+          <p style={{ color: "var(--text-2)", fontSize: "var(--font-xs)", marginBottom: "0.4rem" }}>
             {movie.metaLine}
           </p>
           <p style={{
-            color: movie.bodyEmphasis ? "#e4e4e7" : "#a1a1aa",
-            fontSize: movie.bodyEmphasis ? "0.8rem" : "0.75rem",
+            color: movie.bodyEmphasis ? "#e4e4e7" : "var(--text-2)",
+            fontSize: movie.bodyEmphasis ? "var(--font-sm)" : "var(--font-xs)",
             lineHeight: movie.bodyEmphasis ? 1.5 : 1.4,
-            marginBottom: "0.75rem",
+            marginBottom: "var(--space-3)",
             display: "-webkit-box",
             WebkitLineClamp: movie.bodyEmphasis ? 3 : 2,
             WebkitBoxOrient: "vertical",
@@ -121,8 +95,7 @@ export default function MovieCard({
             </div>
             <div style={{ marginTop: "0.5rem" }}>
               <button
-                className="btn-secondary"
-                style={{ fontSize: "0.75rem", padding: "0.3rem 0.75rem" }}
+                className="btn-secondary btn-sm"
                 disabled={isWatched || inWatchlist || rating > 0}
                 aria-label={
                   isWatched || rating > 0

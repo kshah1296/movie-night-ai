@@ -31,7 +31,7 @@ export default function SharePage() {
 
       {toWatch.length > 0 && (
         <section style={{ marginBottom: "2.5rem" }}>
-          <h2 style={{ fontWeight: 700, fontSize: "1.1rem", marginBottom: "1rem", color: "#a855f7" }}>
+          <h2 style={{ fontWeight: 700, fontSize: "var(--font-xl)", marginBottom: "1rem", color: "var(--accent)" }}>
             Up Next
           </h2>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "1rem" }}>
@@ -44,7 +44,7 @@ export default function SharePage() {
 
       {watched.length > 0 && (
         <section>
-          <h2 style={{ fontWeight: 700, fontSize: "1.1rem", marginBottom: "1rem", color: "#71717a" }}>
+          <h2 style={{ fontWeight: 700, fontSize: "var(--font-xl)", marginBottom: "1rem", color: "var(--text-2)" }}>
             Already Watched
           </h2>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "1rem" }}>
@@ -56,7 +56,7 @@ export default function SharePage() {
       )}
 
       {items.length === 0 && (
-        <p style={{ textAlign: "center", color: "#71717a", paddingTop: "4rem" }}>
+        <p style={{ textAlign: "center", color: "var(--text-3)", paddingTop: "4rem" }}>
           Watchlist is empty.
         </p>
       )}
@@ -71,16 +71,17 @@ function MovieTile({ item, dimmed, index = 0 }: { item: WatchlistItem; dimmed?: 
       className="card-in"
       style={{
         animationDelay: `${Math.min(index * 40, 400)}ms`,
-        background: "#18181b",
-        borderRadius: "0.75rem",
-        border: "1px solid #27272a",
+        background: "var(--surface)",
+        borderRadius: "var(--radius-md)",
+        border: "1px solid var(--border)",
+        boxShadow: "var(--shadow-sm)",
         overflow: "hidden",
       }}
     >
       <div
         style={{
           aspectRatio: "2/3",
-          background: "#27272a",
+          background: "var(--surface-2)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -104,7 +105,7 @@ function MovieTile({ item, dimmed, index = 0 }: { item: WatchlistItem; dimmed?: 
         <p style={{ color: "var(--text-3)", fontSize: "0.7rem" }}>{item.year}</p>
         {item.post_watch_rating ? (
           <p
-            style={{ color: "#facc15", fontSize: "0.75rem" }}
+            style={{ color: "var(--gold)", fontSize: "var(--font-xs)" }}
             aria-label={`Rated ${item.post_watch_rating} out of 5`}
           >
             <span aria-hidden="true">{"★".repeat(item.post_watch_rating)}</span>

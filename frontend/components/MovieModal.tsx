@@ -143,9 +143,10 @@ export default function MovieModal({
         ref={dialogRef}
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: "#18181b", borderRadius: "1rem", width: "100%",
+          background: "var(--surface)", borderRadius: "var(--radius-lg)", width: "100%",
           maxWidth: 680, maxHeight: "90vh", overflowY: "auto",
           position: "relative",
+          boxShadow: "var(--shadow-lg)",
           animation: "modal-pop 0.25s ease-out",
         }}
       >
@@ -166,7 +167,7 @@ export default function MovieModal({
         {backdropUrl && (
           <div style={{ width: "100%", aspectRatio: "16/7", overflow: "hidden", borderRadius: "1rem 1rem 0 0", position: "relative" }}>
             <Image src={backdropUrl} alt="" fill style={{ objectFit: "cover", opacity: 0.7 }} />
-            <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, #18181b 0%, transparent 60%)" }} />
+            <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, var(--surface) 0%, transparent 60%)" }} />
           </div>
         )}
 
@@ -184,7 +185,7 @@ export default function MovieModal({
           </div>
         )}
         {loadError && (
-          <div style={{ padding: "4rem", textAlign: "center", color: "#f87171" }}>Failed to load movie details.</div>
+          <div style={{ padding: "4rem", textAlign: "center", color: "var(--danger)" }}>Failed to load movie details.</div>
         )}
 
         {movie && (
@@ -192,7 +193,7 @@ export default function MovieModal({
             {/* Header */}
             <div className="modal-header" style={{ display: "flex", gap: "1.25rem", marginTop: backdropUrl ? "-4rem" : 0, position: "relative" }}>
               {poster && (
-                <div style={{ width: 100, height: 150, borderRadius: "0.5rem", overflow: "hidden", flexShrink: 0, border: "2px solid #3f3f46" }}>
+                <div style={{ width: 100, height: 150, borderRadius: "0.5rem", overflow: "hidden", flexShrink: 0, border: "2px solid var(--border-strong)" }}>
                   <Image src={poster} alt={movie.title} width={100} height={150} style={{ objectFit: "cover", width: "100%", height: "100%" }} />
                 </div>
               )}
@@ -200,7 +201,7 @@ export default function MovieModal({
                 <h2 style={{ fontSize: "1.4rem", fontWeight: 800, lineHeight: 1.2, marginBottom: "0.25rem" }}>
                   {movie.title}
                 </h2>
-                <p style={{ color: "#a1a1aa", fontSize: "0.8rem", marginBottom: "0.5rem" }}>
+                <p style={{ color: "var(--text-2)", fontSize: "0.8rem", marginBottom: "0.5rem" }}>
                   {[year, runtime, movie.genres.slice(0, 3).map(g => g.name).join(" · ")].filter(Boolean).join(" · ")}
                 </p>
                 {/* Critic / audience scores (TMDB always; IMDb/RT/Metacritic via OMDb) */}
@@ -240,7 +241,7 @@ export default function MovieModal({
                     </button>
                   )}
                   {rating > 0 && (
-                    <span style={{ fontSize: "0.75rem", color: "#a855f7", fontWeight: 600 }}>✓ Watched</span>
+                    <span style={{ fontSize: "0.75rem", color: "var(--accent)", fontWeight: 600 }}>✓ Watched</span>
                   )}
                   {trailer && (
                     <a
@@ -248,7 +249,7 @@ export default function MovieModal({
                       target="_blank"
                       rel="noopener noreferrer"
                       className="btn-secondary"
-                      style={{ fontSize: "0.75rem", padding: "0.35rem 0.9rem", color: "#f87171", textDecoration: "none", display: "inline-flex", alignItems: "center" }}
+                      style={{ fontSize: "0.75rem", padding: "0.35rem 0.9rem", color: "var(--danger)", textDecoration: "none", display: "inline-flex", alignItems: "center" }}
                     >
                       ▶ Trailer
                     </a>
@@ -258,7 +259,7 @@ export default function MovieModal({
             </div>
 
             {movie.tagline && (
-              <p style={{ color: "#a855f7", fontStyle: "italic", fontSize: "0.85rem", marginTop: "1rem" }}>
+              <p style={{ color: "var(--accent)", fontStyle: "italic", fontSize: "0.85rem", marginTop: "1rem" }}>
                 "{movie.tagline}"
               </p>
             )}
@@ -272,7 +273,7 @@ export default function MovieModal({
               <div style={{ marginTop: "1.25rem" }}>
                 {streamingProviders.length > 0 && (
                   <div style={{ marginBottom: "0.75rem" }}>
-                    <p style={{ color: "#a1a1aa", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "0.5rem" }}>
+                    <p style={{ color: "var(--text-2)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "0.5rem" }}>
                       Stream
                     </p>
                     <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -284,7 +285,7 @@ export default function MovieModal({
                 )}
                 {rentProviders.length > 0 && (
                   <div>
-                    <p style={{ color: "#a1a1aa", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "0.5rem" }}>
+                    <p style={{ color: "var(--text-2)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "0.5rem" }}>
                       Rent / Buy
                     </p>
                     <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -310,12 +311,12 @@ export default function MovieModal({
             {/* Cast */}
             {cast.length > 0 && (
               <div style={{ marginTop: "1.25rem" }}>
-                <p style={{ color: "#a1a1aa", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "0.75rem" }}>
+                <p style={{ color: "var(--text-2)", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "0.75rem" }}>
                   Cast
                 </p>
                 <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
                   {cast.map((actor) => (
-                    <div key={actor.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "#27272a", borderRadius: "999px", padding: "0.25rem 0.75rem 0.25rem 0.25rem" }}>
+                    <div key={actor.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "var(--surface-2)", borderRadius: "999px", padding: "0.25rem 0.75rem 0.25rem 0.25rem" }}>
                       {actor.profile_path ? (
                         <Image
                           src={`https://image.tmdb.org/t/p/w45${actor.profile_path}`}
@@ -323,13 +324,13 @@ export default function MovieModal({
                           style={{ borderRadius: "50%", objectFit: "cover" }}
                         />
                       ) : (
-                        <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#3f3f46", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem" }}>
+                        <div style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--border-strong)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem" }}>
                           👤
                         </div>
                       )}
                       <div>
                         <p style={{ fontSize: "0.75rem", fontWeight: 600, lineHeight: 1.2 }}>{actor.name}</p>
-                        <p style={{ fontSize: "0.65rem", color: "#a1a1aa", lineHeight: 1.2 }}>{actor.character}</p>
+                        <p style={{ fontSize: "0.65rem", color: "var(--text-2)", lineHeight: 1.2 }}>{actor.character}</p>
                       </div>
                     </div>
                   ))}
@@ -354,13 +355,13 @@ function rtIsFresh(value: string): boolean {
 function ScoreBadge({ label, value, color, href }: { label: string; value: string; color: string; href?: string }) {
   const inner = (
     <>
-      <span style={{ color: "#a1a1aa", fontWeight: 600 }}>{label}</span>
+      <span style={{ color: "var(--text-2)", fontWeight: 600 }}>{label}</span>
       <span style={{ color, fontWeight: 700 }}>{value}</span>
     </>
   );
   const style: React.CSSProperties = {
     display: "inline-flex", alignItems: "center", gap: "0.3rem",
-    background: "#27272a", borderRadius: "0.5rem",
+    background: "var(--surface-2)", borderRadius: "0.5rem",
     padding: "0.25rem 0.55rem", fontSize: "0.78rem", textDecoration: "none",
   };
   return href ? (
@@ -378,7 +379,7 @@ function ProviderBadge({ provider }: { provider: { provider_name: string; logo_p
       title={provider.provider_name}
       style={{
         display: "flex", alignItems: "center", gap: "0.4rem",
-        background: "#27272a", borderRadius: "0.5rem",
+        background: "var(--surface-2)", borderRadius: "0.5rem",
         padding: "0.3rem 0.6rem", fontSize: "0.75rem", fontWeight: 500,
       }}
     >

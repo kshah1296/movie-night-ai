@@ -12,11 +12,42 @@
   --text-1: #fafafa;
   --text-2: #a1a1aa;
   --text-3: #8b8b96; /* tertiary floor — ≥5:1 on --bg (replaces #71717a/#52525b in running text) */
+  --surface-3: #2e2e35; /* hover fill for surfaces */
   --accent: #a855f7;
+  --accent-soft: rgba(168, 85, 247, 0.14); /* tinted accent fill (selected/active backgrounds) */
   --danger: #f87171;
   --gold: #fbbf24;
+  --text-on-accent: #ffffff;
   --gradient: linear-gradient(135deg, #a855f7, #ec4899, #f97316);
   --gradient-2: linear-gradient(135deg, #a855f7, #ec4899);
+
+  /* Elevation — Polish pass (2026-06-16) */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
+
+  /* Radius scale */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+
+  /* Type scale */
+  --font-xs: 0.75rem;    /* meta, captions */
+  --font-sm: 0.8125rem;  /* secondary body */
+  --font-md: 0.875rem;   /* base body */
+  --font-lg: 1rem;       /* emphasized body / inputs */
+  --font-xl: 1.25rem;    /* section headings */
+  --font-2xl: 1.5rem;    /* card / modal titles */
+  --font-3xl: 2rem;      /* page titles */
+
+  /* Spacing scale (4px base) */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
 }
 
 @theme inline {
@@ -55,11 +86,15 @@ body::before {
 }
 
 /* Task 11 — merged duplicate .gradient-border blocks */
+/* Polish pass: resting elevation (1px border + soft shadow) so cards read as
+   physical surfaces, not flat fills. Hover lifts to a stronger shadow. */
 .gradient-border {
   position: relative;
-  background: #18181b;
-  border-radius: 0.75rem;
-  transition: transform 0.15s;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s, box-shadow 0.2s;
 }
 
 .gradient-border::before {
@@ -79,6 +114,7 @@ body::before {
 
 .gradient-border:hover {
   transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
 }
 
 /* Task 4 — poster zoom on card hover */
@@ -114,25 +150,50 @@ body::before {
 }
 
 .btn-secondary {
-  background: #27272a;
-  color: #a1a1aa;
+  background: var(--surface-2);
+  color: var(--text-2);
   padding: 0.5rem 1.25rem;
-  border-radius: 0.5rem;
+  border-radius: var(--radius-sm);
   font-weight: 500;
-  font-size: 0.875rem;
+  font-size: var(--font-md);
   transition: background 0.15s, color 0.15s;
   cursor: pointer;
   border: none;
 }
 
 .btn-secondary:hover {
-  background: #3f3f46;
-  color: #fafafa;
+  background: var(--border-strong);
+  color: var(--text-1);
 }
 
 .btn-secondary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Polish pass — standard small-button modifier (replaces inline font/padding overrides) */
+.btn-sm {
+  padding: 0.3rem 0.75rem;
+  font-size: var(--font-xs);
+}
+
+/* Polish pass — icon button (close / dismiss circles). Size via width/height. */
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text-2);
+  cursor: pointer;
+  line-height: 1;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.btn-icon:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
 }
 
 /* Task 5 — chip utility (genre filter buttons) */
@@ -152,8 +213,8 @@ body::before {
 }
 
 .chip:hover {
-  color: #fafafa;
-  border-color: #a855f7;
+  color: var(--text-1);
+  border-color: var(--accent);
 }
 
 .chip:active {
@@ -162,12 +223,12 @@ body::before {
 
 .chip.chip-active {
   border: 1px solid transparent;
-  background: linear-gradient(135deg, #a855f7, #ec4899);
-  color: white;
+  background: var(--gradient-2);
+  color: var(--text-on-accent);
 }
 
 .chip.chip-active:hover {
-  color: white;
+  color: var(--text-on-accent);
   border-color: transparent;
 }
 
@@ -175,23 +236,23 @@ body::before {
 .tab {
   padding: 0.4rem 1rem;
   border-radius: 999px;
-  font-size: 0.8rem;
+  font-size: var(--font-sm);
   font-weight: 600;
   cursor: pointer;
   border: none;
-  background: #27272a;
-  color: #a1a1aa;
+  background: var(--surface-2);
+  color: var(--text-2);
   transition: color 0.15s, background 0.15s, transform 0.1s;
 }
 
-.tab:hover { color: #fafafa; background: #3f3f46; }
+.tab:hover { color: var(--text-1); background: var(--border-strong); }
 .tab:active { transform: scale(0.96); }
-.tab.tab-active { background: linear-gradient(135deg, #a855f7, #ec4899); color: white; }
-.tab.tab-active:hover { color: white; background: linear-gradient(135deg, #a855f7, #ec4899); }
+.tab.tab-active { background: var(--gradient-2); color: var(--text-on-accent); }
+.tab.tab-active:hover { color: var(--text-on-accent); background: var(--gradient-2); }
 
 /* Task 5 — nav link hover */
-.nav-link { transition: color 0.15s, background 0.15s; border-radius: 0.5rem; }
-.nav-link:hover { color: #fafafa !important; background: #27272a; }
+.nav-link { transition: color 0.15s, background 0.15s; border-radius: var(--radius-sm); }
+.nav-link:hover { color: var(--text-1) !important; background: var(--surface-2); }
 
 /* Search input focus ring */
 .search-input:focus {

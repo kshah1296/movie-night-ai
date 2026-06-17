@@ -16,7 +16,7 @@ export default function Nav() {
   return (
     <nav
       style={{
-        borderBottom: "1px solid #27272a",
+        borderBottom: "1px solid var(--border)",
         background: "rgba(9,9,11,0.8)",
         backdropFilter: "blur(12px)",
         position: "sticky",
@@ -55,7 +55,7 @@ export default function Nav() {
                   padding: "0.4rem 0.9rem",
                   fontSize: "clamp(0.75rem, 4vw, 0.875rem)",
                   fontWeight: active ? 600 : 500,
-                  color: active ? "#fafafa" : "#a1a1aa",
+                  color: active ? "var(--text-1)" : "var(--text-2)",
                   textDecoration: "none",
                 }}
               >

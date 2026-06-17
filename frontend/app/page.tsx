@@ -383,7 +383,7 @@ export default function HomePage() {
 
       {/* "Your taste" strip — read-only summary of what the engine inferred (P1-8) */}
       {taste && (taste.keywords.length > 0 || taste.people.length > 0 || taste.genres.length > 0) && (
-        <div className="chip-row" style={{ marginBottom: "0.85rem" }}>
+        <div className="chip-row" style={{ marginBottom: "var(--space-3)" }}>
           <span style={{ color: "var(--text-3)", fontSize: "0.7rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", marginRight: "0.15rem", flexShrink: 0 }}>
             What we&apos;ve learned
           </span>
@@ -394,7 +394,7 @@ export default function HomePage() {
       )}
 
       {/* Mode bar: mood pills + fixed genre chips, one scrollable line (no chip wall) */}
-      <div className="chip-row" style={{ marginBottom: "0.6rem" }}>
+      <div className="chip-row" style={{ marginBottom: "var(--space-2)" }}>
         {MOODS.map((m) => (
           <button
             key={m.id}
@@ -425,7 +425,7 @@ export default function HomePage() {
       </div>
 
       {/* Streaming filter: toggle + service chips (persisted in localStorage) */}
-      <div style={{ display: "flex", gap: "0.4rem", marginBottom: "1.5rem", flexWrap: "wrap", alignItems: "center" }}>
+      <div style={{ display: "flex", gap: "0.4rem", marginBottom: "var(--space-6)", flexWrap: "wrap", alignItems: "center" }}>
         <button
           className={`tab${streamingOnly && services.length ? " tab-active" : ""}`}
           aria-pressed={streamingOnly}
@@ -454,7 +454,7 @@ export default function HomePage() {
       <div style={{
         display: "grid",
         gridTemplateColumns: "repeat(auto-fill, minmax(min(320px, 100%), 1fr))",
-        gap: "1.25rem",
+        gap: "var(--space-5)",
         opacity: refreshing ? 0.45 : 1,
         transition: "opacity 0.2s",
         pointerEvents: refreshing ? "none" : "auto",

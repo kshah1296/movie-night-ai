@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import {
   getWatchlist,
@@ -10,8 +9,8 @@ import {
   removeFromWatchlist,
   type WatchlistItem,
 } from "@/lib/api";
-import { posterUrl } from "@/lib/tmdb";
 import StarRating from "@/components/StarRating";
+import Poster from "@/components/Poster";
 import Toast from "@/components/Toast";
 import { SkeletonGrid } from "@/components/SkeletonCard";
 import MovieModal from "@/components/MovieModal";
@@ -179,7 +178,7 @@ export default function WatchlistPage() {
       {loading && <SkeletonGrid count={6} />}
 
       {!loading && error && (
-        <div style={{ textAlign: "center", paddingTop: "6rem", color: "#f87171" }}>{error}</div>
+        <EmptyState emoji="📡" title="Couldn't load your watchlist" subtitle={error} />
       )}
 
       {!loading && !error && (
@@ -239,9 +238,8 @@ export default function WatchlistPage() {
             </p>
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(320px, 100%), 1fr))", gap: "1.25rem" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(320px, 100%), 1fr))", gap: "var(--space-5)" }}>
             {filtered.map((item, i) => {
-              const poster = posterUrl(item.poster_path);
               return (
                 <div
                   key={item.tmdb_id}
@@ -249,51 +247,20 @@ export default function WatchlistPage() {
                   style={{ animationDelay: `${Math.min(i * 40, 400)}ms`, cursor: "pointer" }}
                   onClick={() => setModalId(item.tmdb_id)}
                 >
-                  <div style={{ display: "flex", gap: "1rem", padding: "1rem" }}>
-                    <div
-                      className="poster-frame"
-                      style={{
-                        width: 100, height: 150, borderRadius: "0.5rem", overflow: "hidden",
-                        flexShrink: 0, background: "#27272a",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        position: "relative",
-                      }}
-                    >
-                      {poster ? (
-                        <Image src={poster} alt={item.title} width={100} height={150}
-                          style={{ objectFit: "cover", width: "100%", height: "100%" }} />
-                      ) : (
-                        <span style={{ fontSize: "2rem" }}>🎬</span>
-                      )}
-                      {item.watched && (
-                        <div
-                          role="img"
-                          aria-label="Watched"
-                          style={{
-                            position: "absolute", top: 4, right: 4,
-                            width: 24, height: 24,
-                            background: "linear-gradient(135deg, #a855f7, #ec4899)",
-                            borderRadius: "50%",
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            fontSize: "0.7rem", color: "white", fontWeight: 700,
-                          }}
-                        >
-                          <span aria-hidden="true">✓</span>
-                        </div>
-                      )}
-                    </div>
+                  <div style={{ display: "flex", gap: "var(--space-4)", padding: "var(--space-4)" }}>
+                    <Poster path={item.poster_path} alt={item.title} watched={item.watched} />
 
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <h3 style={{ fontWeight: 700, fontSize: "0.95rem", marginBottom: "0.15rem", lineHeight: 1.3 }}>
                         {item.title}
                       </h3>
-                      <p style={{ color: "#a1a1aa", fontSize: "0.75rem", marginBottom: "0.5rem" }}>
+                      <p style={{ color: "var(--text-2)", fontSize: "var(--font-xs)", marginBottom: "0.5rem" }}>
                         {item.year} · {item.genres.slice(0, 2).join(", ")}
                       </p>
 
                       {item.watched && (
                         <div style={{ marginBottom: "0.5rem" }} onClick={(e) => e.stopPropagation()}>
-                          <p style={{ color: "#a1a1aa", fontSize: "0.7rem", marginBottom: "0.25rem" }}>Your rating:</p>
+                          <p style={{ color: "var(--text-2)", fontSize: "0.7rem", marginBottom: "0.25rem" }}>Your rating:</p>
                           <StarRating
                             value={item.post_watch_rating ?? 0}
                             onChange={(r) => handlePostRating(item, r)}
@@ -304,8 +271,7 @@ export default function WatchlistPage() {
 
                       <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.5rem", alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
                         <button
-                          className="btn-secondary"
-                          style={{ fontSize: "0.72rem", padding: "0.3rem 0.75rem" }}
+                          className="btn-secondary btn-sm"
                           onClick={() => toggleWatched(item)}
                         >
                           {item.watched ? "↩ Unwatch" : "✓ Mark Watched"}

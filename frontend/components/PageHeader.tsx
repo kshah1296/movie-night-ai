@@ -26,8 +26,8 @@ export default function PageHeader({ title, subtitle, badge, actions, align = "l
       }}
     >
       <div style={{ minWidth: 0 }}>
-        <h1 style={{ fontSize: "2rem", fontWeight: 800, marginBottom: "0.25rem", lineHeight: 1.15 }}>
-          <span className="gradient-text">{title}</span>
+        <h1 style={{ fontSize: "var(--font-3xl)", fontWeight: 800, marginBottom: "0.25rem", lineHeight: 1.15, color: "var(--text-1)" }}>
+          {title}
           {badge && (
             <span
               style={{
@@ -43,7 +43,7 @@ export default function PageHeader({ title, subtitle, badge, actions, align = "l
             </span>
           )}
         </h1>
-        {subtitle && <p style={{ color: "var(--text-2)", fontSize: "0.9rem" }}>{subtitle}</p>}
+        {subtitle && <p style={{ color: "var(--text-2)", fontSize: "var(--font-md)" }}>{subtitle}</p>}
       </div>
       {actions && (
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexShrink: 0 }}>

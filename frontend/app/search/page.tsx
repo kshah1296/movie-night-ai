@@ -19,7 +19,7 @@ import {
   type DiscoverParams,
 } from "@/lib/api";
 import { genreIdsToNames, GENRE_MAP } from "@/lib/tmdb";
-import MovieCard from "@/components/MovieCard";
+import PosterCard from "@/components/PosterCard";
 import MovieModal from "@/components/MovieModal";
 import Toast from "@/components/Toast";
 import { SkeletonGrid } from "@/components/SkeletonCard";
@@ -193,7 +193,7 @@ function dedupeAppend(prev: TmdbMovie[], next: TmdbMovie[]): TmdbMovie[] {
 
 export default function SearchPage() {
   return (
-    <Suspense fallback={<SkeletonGrid count={8} />}>
+    <Suspense fallback={<SkeletonGrid count={12} variant="poster" />}>
       <SearchPageInner />
     </Suspense>
   );
@@ -612,29 +612,29 @@ function SearchPageInner() {
       )}
 
       {error && (
-        <p style={{ color: "#f87171", fontSize: "0.875rem", marginBottom: "1rem" }}>{error}</p>
+        <EmptyState emoji="📡" title="Couldn't load movies" subtitle={error} />
       )}
 
       {/* Real result count from total_results, not loaded-page count */}
       {!loading && !error && results.length > 0 && (
-        <p style={{ color: "#a1a1aa", fontSize: "0.8rem", marginBottom: "1rem" }}>
+        <p style={{ color: "var(--text-2)", fontSize: "var(--font-sm)", marginBottom: "1rem" }}>
           {isSearchMode
             ? `${totalResults.toLocaleString()} results for "${filters.q}"`
             : `${totalResults.toLocaleString()} movies · ${sortLabel}`}
         </p>
       )}
 
-      {loading && <SkeletonGrid count={8} />}
+      {loading && <SkeletonGrid count={12} variant="poster" />}
 
       {!loading && (
         <>
           <div style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(min(320px, 100%), 1fr))",
-            gap: "1.25rem",
+            gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+            gap: "var(--space-4)",
           }}>
             {results.map((movie, i) => (
-              <MovieCard
+              <PosterCard
                 key={movie.id}
                 index={i}
                 movie={{
@@ -646,7 +646,6 @@ function SearchPageInner() {
                     movie.release_date ? movie.release_date.slice(0, 4) : null,
                     genreIdsToNames(movie.genre_ids).slice(0, 2).join(", ") || null,
                   ].filter(Boolean).join(" · "),
-                  body: movie.overview,
                 }}
                 rating={ratings[movie.id] ?? 0}
                 inWatchlist={watchlisted[movie.id] ?? false}
@@ -692,7 +691,7 @@ function SearchPageInner() {
             <div ref={sentinelRef} style={{ textAlign: "center", marginTop: "2rem", minHeight: 56 }}>
               {loadingMore ? (
                 <span role="status">
-                  <span className="spin-icon" aria-hidden="true" style={{ fontSize: "1.5rem", color: "#a855f7" }}>↻</span>
+                  <span className="spin-icon" aria-hidden="true" style={{ fontSize: "1.5rem", color: "var(--accent)" }}>↻</span>
                   <span className="sr-only">Loading more movies…</span>
                 </span>
               ) : (
