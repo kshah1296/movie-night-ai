@@ -62,6 +62,35 @@ class MovieRatingsCache(Base):
     fetched_at = Column(DateTime, server_default=func.now())
 
 
+class MovieDNA(Base):
+    """Taste-DNA vector for a movie: 10 bipolar axes in [-1, 1] + extracted themes.
+    Fetched once, read forever (same pattern as MovieFacets/MovieRatingsCache).
+    source = 'proxy' (deterministic, instant) or 'llm' (Groq-scored, richer). Proxy
+    rows are upgraded to llm as the per-request batch backlog drains."""
+    __tablename__ = "movie_dna"
+
+    tmdb_id = Column(Integer, primary_key=True, autoincrement=False)
+    axes = Column(String)         # JSON: {pace, focus, tone, ...} floats in [-1, 1]
+    themes = Column(String)       # JSON list of theme strings
+    source = Column(String, default="proxy")  # "proxy" | "llm"
+    fetched_at = Column(DateTime, server_default=func.now())
+
+
+class TasteProfile(Base):
+    """Aggregated Taste DNA for a user (single-profile app; user_id future-proofs
+    multi-user). Rebuilt only when the ratings fingerprint changes."""
+    __tablename__ = "taste_profile"
+
+    user_id = Column(String, primary_key=True, default="local")
+    dna = Column(String)              # JSON: aggregated {axis: value}
+    dna_confidence = Column(String)   # JSON: {axis: 0..1}
+    genre_affinity = Column(String)   # JSON: {genre_id: score}
+    people_affinity = Column(String)  # JSON: {person_id: score}
+    theme_affinity = Column(String)   # JSON: {keyword: score}
+    fingerprint = Column(String)      # ratings md5 — skip rebuild when unchanged
+    updated_at = Column(DateTime, server_default=func.now())
+
+
 class RecFeedback(Base):
     """Feedback on served recommendations.
     action = "not_interested" (user clicked ✕; hard-excluded + used as an avoid exemplar)
@@ -73,6 +102,23 @@ class RecFeedback(Base):
     title = Column(String)
     action = Column(String, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
+
+
+class RecEvent(Base):
+    """Implicit-feedback + impression event stream that powers /analytics.
+    event_type: impression (served, logged server-side) | click | trailer | share |
+    watchlist_add | watchlist_remove | skip. Impressions also carry the bucket, the
+    served position, the deterministic predicted_score, and vote_count (for novelty)."""
+    __tablename__ = "rec_events"
+
+    id = Column(Integer, primary_key=True)
+    tmdb_id = Column(Integer, nullable=False, index=True)
+    event_type = Column(String, nullable=False, index=True)
+    bucket = Column(String, nullable=True)
+    position = Column(Integer, nullable=True)
+    predicted_score = Column(Float, nullable=True)
+    vote_count = Column(Integer, nullable=True)
+    created_at = Column(DateTime, server_default=func.now(), index=True)
 
 
 class TasteAnalysis(Base):

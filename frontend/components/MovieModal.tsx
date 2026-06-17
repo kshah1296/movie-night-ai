@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import {
   getMovieDetail, getMovieProviders, getMovieRatings, rateAndAddWatched,
-  addToWatchlist, deleteRating,
+  addToWatchlist, deleteRating, logEvent,
   type MovieDetail, type MovieProviders, type MovieRatings,
 } from "@/lib/api";
 import { posterUrl } from "@/lib/tmdb";
@@ -244,6 +244,7 @@ export default function MovieModal({
                       target="_blank"
                       rel="noopener noreferrer"
                       className="btn-secondary"
+                      onClick={() => movie && logEvent(movie.id, "trailer")}
                       style={{ fontSize: "0.75rem", padding: "0.35rem 0.9rem", color: "var(--danger)", textDecoration: "none", display: "inline-flex", alignItems: "center" }}
                     >
                       ▶ Trailer

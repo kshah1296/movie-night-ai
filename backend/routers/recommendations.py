@@ -14,7 +14,11 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.models import MovieFacets, Rating, RecFeedback, TasteAnalysis, WatchlistItem
+from backend.models import (
+    MovieDNA, MovieFacets, Rating, RecEvent, RecFeedback, TasteAnalysis, TasteProfile, WatchlistItem,
+)
+from backend import dna as dna_mod
+from backend import scoring
 
 router = APIRouter()
 
@@ -77,6 +81,7 @@ _keyword_id_cache: Dict[str, Optional[int]] = {}
 _person_id_cache: Dict[str, Optional[int]] = {}
 
 ENRICH_BATCH_LIMIT = 15  # max facet fetches per request; the backlog drains across requests
+DNA_BATCH_LIMIT = 8      # max LLM DNA-scorings per request (rated movies prioritized)
 
 
 async def _tmdb_get(client: httpx.AsyncClient, path: str, params: dict) -> dict:
@@ -90,10 +95,12 @@ async def _tmdb_get(client: httpx.AsyncClient, path: str, params: dict) -> dict:
 
 # ── Stage 0: facet enrichment (cached in SQLite) ────────────────────────────
 
-async def _ensure_facets(db: Session, tmdb_key: str, items: list) -> Dict[int, dict]:
-    """items: ORM objects with .tmdb_id. Returns {tmdb_id: facets dict}, fetching
-    and persisting keywords/credits for any movie not yet in movie_facets."""
-    ids = list({it.tmdb_id for it in items})
+async def _ensure_facets(db: Session, tmdb_key: str, ids: List[int]) -> Dict[int, dict]:
+    """ids: tmdb ids (order = priority; earlier ids enriched first when over the batch
+    limit). Returns {tmdb_id: facets dict}, fetching and persisting keywords/credits for
+    any movie not yet in movie_facets."""
+    seen: Set[int] = set()
+    ids = [i for i in ids if not (i in seen or seen.add(i))]  # dedupe, keep order
     facets: Dict[int, dict] = {}
     if ids:
         rows = db.query(MovieFacets).filter(MovieFacets.tmdb_id.in_(ids)).all()
@@ -217,6 +224,8 @@ def _build_profile(ratings: List[Rating], watchlist: List[WatchlistItem],
         "top_keywords": top_keywords, "avoid_keywords": avoid_keywords,
         "loved_people": loved_people, "top_decade": top_decade,
         "fav_languages": fav_languages,
+        # raw person -> score (director*2 / actor*1, positive weights only) for the scorer
+        "people_scores": {pid: e["score"] for pid, e in people_scores.items()},
     }
 
 
@@ -484,8 +493,11 @@ async def _candidate_pool_v2(profile: dict, analysis: dict, tmdb_key: str,
                 "title": m.get("title", ""),
                 "year": int(m["release_date"][:4]) if m.get("release_date") else None,
                 "genres": [GENRE_MAP[g] for g in gids if g in GENRE_MAP],
+                "genre_ids": [g for g in gids if g in GENRE_MAP],
                 "poster_path": m.get("poster_path"),
                 "vote_average": round(m.get("vote_average", 0), 1),
+                "vote_count": m.get("vote_count", 0),
+                "popularity": m.get("popularity", 0.0),
                 "overview": m.get("overview", ""),
                 "channel": channel,
                 "anchor": anchor,
@@ -507,93 +519,163 @@ async def _candidate_pool_v2(profile: dict, analysis: dict, tmdb_key: str,
     return ordered
 
 
-# ── Stage 4: LLM rank & explain ──────────────────────────────────────────────
+# ── Stage 3.5: Taste DNA (per-movie vectors + user aggregate) ────────────────
 
-def _groq_rank_v2(profile: dict, analysis: dict, candidates: list, groq_key: str,
-                  seed: int, mode_ask: Optional[str],
-                  not_interested_titles: List[str]) -> Optional[List[dict]]:
-    """Returns ordered [{tmdb_id, explanation, anchor}] or None on failure."""
+async def _ensure_dna(db: Session, groq_key: Optional[str],
+                      meta_by_id: Dict[int, dict], rated_ids: Set[int]) -> Dict[int, dict]:
+    """Returns {tmdb_id: {axes, themes, source}}. Cached llm rows win; missing movies get
+    an instant deterministic proxy (persisted only for rated movies). Up to DNA_BATCH_LIMIT
+    movies are LLM-upgraded per request (rated first), the backlog draining across requests."""
+    ids = list(meta_by_id.keys())
+    rows: Dict[int, MovieDNA] = {}
+    if ids:
+        for row in db.query(MovieDNA).filter(MovieDNA.tmdb_id.in_(ids)).all():
+            rows[row.tmdb_id] = row
+
+    dna_map: Dict[int, dict] = {}
+    for mid, row in rows.items():
+        try:
+            axes = json.loads(row.axes or "{}")
+            themes = json.loads(row.themes or "[]")
+        except Exception:
+            axes, themes = {}, []
+        dna_map[mid] = {"axes": {a: float(axes.get(a, 0.0)) for a in dna_mod.AXES},
+                        "themes": themes, "source": row.source}
+
+    def _save(mid: int, axes: dict, themes: list, source: str) -> None:
+        row = rows.get(mid)
+        if row is None:
+            row = MovieDNA(tmdb_id=mid)
+            db.add(row)
+            rows[mid] = row
+        row.axes = json.dumps(axes)
+        row.themes = json.dumps(themes)
+        row.source = source
+
+    for mid in ids:
+        if mid not in dna_map:
+            meta = meta_by_id[mid]
+            axes = dna_mod.proxy_dna(meta.get("facets"), meta.get("genres", []),
+                                     meta.get("vote_average", 0.0), meta.get("vote_count", 0),
+                                     meta.get("popularity", 0.0))
+            dna_map[mid] = {"axes": axes, "themes": [], "source": "proxy-transient"}
+            if mid in rated_ids:  # persist so the user profile is stable across requests
+                _save(mid, axes, [], "proxy")
+                dna_map[mid]["source"] = "proxy"
+
+    if groq_key:
+        queue = [m for m in rated_ids if m in dna_map and dna_map[m]["source"] != "llm"]
+        queue += [m for m in ids if m not in rated_ids and dna_map[m]["source"] != "llm"]
+        queue = queue[:DNA_BATCH_LIMIT]
+
+        async def upgrade(mid: int):
+            meta = meta_by_id[mid]
+            movie = {"title": meta.get("title"), "year": meta.get("year"),
+                     "genres": meta.get("genres", []), "overview": meta.get("overview", ""),
+                     "keywords": (meta.get("facets") or {}).get("keywords", [])}
+            try:
+                return mid, await asyncio.to_thread(dna_mod.llm_score_dna, movie, groq_key)
+            except Exception:
+                return mid, None
+
+        if queue:
+            for mid, scored in await asyncio.gather(*[upgrade(m) for m in queue]):
+                if scored:
+                    dna_map[mid] = {"axes": scored["axes"], "themes": scored["themes"], "source": "llm"}
+                    _save(mid, scored["axes"], scored["themes"], "llm")
+    db.commit()
+    return dna_map
+
+
+def _nearest_loved_anchor(cand_axes: Dict[str, float],
+                          loved_dna: List[Tuple[str, Dict[str, float]]]) -> Optional[str]:
+    """Deterministic anchor: the loved film whose DNA is closest to this candidate."""
+    best, best_d = None, 2.0
+    for title, axes in loved_dna:
+        d = dna_mod.dna_distance(cand_axes, axes)
+        if d < best_d:
+            best, best_d = title, d
+    return best
+
+
+# ── Stage 5: explanations (LLM prose only — ranking is already done) ─────────
+
+def _template_reason_v2(cand: dict, anchor: Optional[str], dna_words: List[str]) -> str:
+    """DNA-aware fallback explanation when the LLM is unavailable."""
+    traits = ", ".join(dna_words[:2])
+    if anchor and traits:
+        return f'Shares the {traits} feel of "{anchor}" from your favorites.'
+    if anchor:
+        return f'In the same vein as "{anchor}", which you loved.'
+    if traits:
+        return f'A {traits} pick aligned with your taste ({cand["vote_average"]}★).'
+    return f'A highly-rated {", ".join(cand["genres"][:2]) or "pick"} ({cand["vote_average"]}★) for your taste.'
+
+
+def _groq_explain(picks: List[dict], profile_text: str, dna_words: List[str],
+                  groq_key: str) -> Dict[int, str]:
+    """One Groq call → {tmdb_id: one-sentence reason}. Ranking is NOT done here."""
     client = Groq(api_key=groq_key)
-    cand_lines = []
-    for c in candidates:
-        tag = c["channel"]
-        if c.get("anchor"):
-            tag += ', similar to "%s"' % c["anchor"]
-        overview = (c.get("overview") or "")[:140]
-        cand_lines.append(
-            f'{c["tmdb_id"]}: {c["title"]} ({c["year"]}) — {", ".join(c["genres"][:3])} — '
-            f'{c["vote_average"]}★ [{tag}] — {overview}'
+    traits = ", ".join(dna_words) or "varied"
+    lines = []
+    for c in picks:
+        anchor = f' [anchor: {c["anchor"]}]' if c.get("anchor") else ""
+        themes = ", ".join(c.get("themes", [])[:4])
+        lines.append(
+            f'{c["tmdb_id"]}: {c["title"]} ({c["year"]}) — {", ".join(c["genres"][:3])}'
+            f' — bucket: {c.get("bucket")}{anchor} — themes: {themes} — {(c.get("overview") or "")[:120]}'
         )
 
-    tone_block = f"\nTASTE READING: {analysis['tone']}\n" if analysis.get("tone") else ""
-    rejected_block = (
-        "\nRECENTLY REJECTED RECS (user clicked 'not interested' — avoid anything too similar): "
-        + ", ".join(not_interested_titles) + "\n"
-    ) if not_interested_titles else ""
-    mode_block = (
-        f"\nTONIGHT'S REQUEST: {mode_ask}\n"
-        "Every pick MUST satisfy this request — taste-match within it, do not drift outside it.\n"
-    ) if mode_ask else ""
-    genre_rule = (
-        "- Tonight is a single-genre/mood request, so ignore genre-diversity limits."
-        if mode_ask else
-        "- No more than 4 picks sharing the same primary genre."
-    )
+    prompt = f"""You write ONE warm, specific sentence explaining why each movie suits this viewer.
+Their taste DNA: {traits}.
+{profile_text}
 
-    prompt = f"""You are a film curator. Here is a user's taste profile:
+Rules: max ~22 words each. When an [anchor] is given, name it and the concrete shared trait
+(tone, story structure, theme, director, pacing) — e.g. "Like Arrival, this sci-fi leans on emotional
+connection over spectacle." Reference the DNA traits where they fit. Never write generic praise.
 
-{_profile_text(profile)}{tone_block}{rejected_block}{mode_block}
-Below is a list of CANDIDATE movies (real TMDB ids), each tagged with the retrieval channel that
-found it. Pick the 12 best matches for this user, ranked best-first. Selection rules:
-- At least 3 picks from [hidden-gem] candidates when available — favor quality over popularity.
-- Include exactly 1 [wildcard] pick if any are listed; frame its explanation as a stretch
-  ("A step outside your usual, but...").
-{genre_rule}
-- Skip anything that resembles their DISLIKED films or rejected recs.
-For each pick write a warm, specific 1-2 sentence reason naming an actual movie they LOVED and the
-concrete trait it shares (tone, director, theme, pacing, era). Also return that loved movie's
-title as "anchor".
+MOVIES:
+{chr(10).join(lines)}
 
-CANDIDATES:
-{chr(10).join(cand_lines)}
-
-Respond ONLY with a valid JSON array (no markdown, no code fences). Use ONLY ids from the list:
-[{{"tmdb_id": 123, "explanation": "Because you loved ...", "anchor": "Heat"}}]"""
+Respond ONLY with valid JSON (no fences): {{"<tmdb_id>": "<one sentence>", ...}}"""
 
     chat = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.6,
-        seed=seed,
     )
     text = chat.choices[0].message.content.strip()
     text = text.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-    start, end = text.find("["), text.rfind("]")
+    start, end = text.find("{"), text.rfind("}")
     if start == -1 or end == -1:
-        return None
-    picks = json.loads(text[start:end + 1])
-    valid_ids = {c["tmdb_id"] for c in candidates}
-    out: List[dict] = []
-    seen: Set[int] = set()
-    for p in picks:
-        if isinstance(p, dict) and p.get("tmdb_id") in valid_ids and p["tmdb_id"] not in seen:
-            seen.add(p["tmdb_id"])
-            out.append({
-                "tmdb_id": p["tmdb_id"],
-                "explanation": str(p.get("explanation", "")),
-                "anchor": p.get("anchor") if isinstance(p.get("anchor"), str) else None,
-            })
-    return out or None
+        return {}
+    data = json.loads(text[start:end + 1])
+    out: Dict[int, str] = {}
+    if isinstance(data, dict):
+        for k, v in data.items():
+            try:
+                out[int(k)] = str(v)
+            except (TypeError, ValueError):
+                continue
+    return out
 
 
-def _template_reason(cand: dict, profile: dict) -> str:
-    """Fallback explanation when the LLM is unavailable."""
-    top = sorted(profile["loved"], key=lambda r: r.rating, reverse=True)
-    overlap = next((r for r in top
-                    if set(json.loads(r.genres) if r.genres else []) & set(cand["genres"])), None)
-    if overlap:
-        return f'Shares the {", ".join(cand["genres"][:2])} vibe of "{overlap.title}", which you rated {int(overlap.rating)}★.'
-    return f'A highly-rated {", ".join(cand["genres"][:2]) or "pick"} ({cand["vote_average"]}★) that matches your taste.'
+def _persist_taste_profile(db: Session, fingerprint: str, user_dna: Dict[str, float],
+                           confidence: Dict[str, float], profile: dict) -> None:
+    """Save the aggregated Taste DNA + affinities. Skips the write when unchanged."""
+    existing = db.query(TasteProfile).filter(TasteProfile.user_id == "local").first()
+    if existing and existing.fingerprint == fingerprint:
+        return
+    genre_aff = {str(g): c for g, c in profile["loved_genres"].items()}
+    people_aff = {str(p): s for p, s in profile.get("people_scores", {}).items()}
+    theme_aff = {k: 1 for k in profile["top_keywords"]}
+    db.merge(TasteProfile(
+        user_id="local", dna=json.dumps(user_dna), dna_confidence=json.dumps(confidence),
+        genre_affinity=json.dumps(genre_aff), people_affinity=json.dumps(people_aff),
+        theme_affinity=json.dumps(theme_aff), fingerprint=fingerprint,
+        updated_at=datetime.utcnow(),
+    ))
+    db.commit()
 
 
 # ── Route ────────────────────────────────────────────────────────────────────
@@ -630,7 +712,9 @@ async def get_recommendations(
         mood_spec = None  # genre wins if both are sent
 
     # Stage 0 + 1: facets (cached in SQLite) → weighted profile
-    facets = await _ensure_facets(db, tmdb_key, list(ratings) + [w for w in watchlist if not w.watched])
+    rated_ids: Set[int] = {r.tmdb_id for r in ratings}
+    want_ids = [w.tmdb_id for w in watchlist if not w.watched]
+    facets = await _ensure_facets(db, tmdb_key, [r.tmdb_id for r in ratings] + want_ids)
     profile = _build_profile(ratings, watchlist, facets)
 
     # Stage 2: taste analysis — cached on the ratings fingerprint, Groq only on change
@@ -674,44 +758,105 @@ async def get_recommendations(
                if providers else "Rate a few more movies to unlock picks.")
         return {"recommendations": [], "message": msg, "source": "error"}
 
-    mode_ask: Optional[str] = None
-    if genre_id:
-        mode_ask = (f"The user specifically wants a {genre} movie tonight. Every pick must be a "
-                    f"{genre} (or strongly {genre}-leaning) film chosen for THEIR taste — "
-                    f"not just any popular {genre}.")
-    elif mood_spec:
-        mode_ask = mood_spec["ask"]
+    # Stage 3.5: Taste DNA. Enrich candidate facets (director/cast power the scorer +
+    # MMR director cap), then resolve a DNA vector for every rated movie + candidate.
+    cand_ids = [c["tmdb_id"] for c in candidates]
+    cand_facets = await _ensure_facets(db, tmdb_key, cand_ids)
+    facets = {**facets, **cand_facets}
 
-    # Stage 4: rank & explain
-    source = "tmdb"
-    ranked = candidates
-    picks_meta: Dict[int, dict] = {}
-    if groq_key:
+    meta_by_id: Dict[int, dict] = {}
+    for r in ratings:
         try:
-            picks = await asyncio.to_thread(_groq_rank_v2, profile, analysis, candidates,
-                                            groq_key, seed, mode_ask, not_interested_titles)
-            if picks:
-                by_id = {c["tmdb_id"]: c for c in candidates}
-                ranked = [by_id[p["tmdb_id"]] for p in picks if p["tmdb_id"] in by_id]
-                picks_meta = {p["tmdb_id"]: p for p in picks}
-                source = "ai"
-        except Exception as e:
-            print(f"Groq ranking failed, using TMDB order: {e}")
+            g = json.loads(r.genres) if r.genres else []
+        except Exception:
+            g = []
+        meta_by_id[r.tmdb_id] = {
+            "title": r.title, "year": r.year, "genres": g, "overview": "",
+            "vote_average": 0.0, "vote_count": 0, "popularity": 0.0,
+            "facets": facets.get(r.tmdb_id, {}),
+        }
+    for c in candidates:
+        meta_by_id[c["tmdb_id"]] = {
+            "title": c["title"], "year": c["year"], "genres": c["genres"],
+            "overview": c.get("overview", ""), "vote_average": c.get("vote_average", 0.0),
+            "vote_count": c.get("vote_count", 0), "popularity": c.get("popularity", 0.0),
+            "facets": facets.get(c["tmdb_id"], {}),
+        }
 
+    dna_map = await _ensure_dna(db, groq_key, meta_by_id, rated_ids)
+
+    # User DNA aggregate (deterministic) + persist TasteProfile when ratings change
+    contributions = [(int(r.rating) - 3, dna_map.get(r.tmdb_id, {}).get("axes", {})) for r in ratings]
+    user_dna, confidence = dna_mod.aggregate_profile_dna(contributions)
+    dna_words = dna_mod.axes_to_words(user_dna, confidence)
+    _persist_taste_profile(db, fp_base, user_dna, confidence, profile)
+
+    loved_dna = [(r.title, dna_map[r.tmdb_id]["axes"]) for r in profile["loved"]
+                 if r.tmdb_id in dna_map]
+
+    # Stage 4: deterministic hybrid score → buckets → MMR diversity (replaces LLM ranking)
+    for c in candidates:
+        d = dna_map.get(c["tmdb_id"], {})
+        f = facets.get(c["tmdb_id"], {})
+        c["dna"] = d.get("axes", {})
+        c["themes"] = d.get("themes", [])
+        c["directors"] = f.get("directors", [])
+        c["top_cast"] = f.get("top_cast", [])
+        c["keywords"] = f.get("keywords", [])
+
+    scored = [c for c in candidates if (c.get("vote_average") or 0) >= scoring.QUALITY_FLOOR] or list(candidates)
+    for c in scored:
+        s, comps = scoring.score_candidate(c, profile, user_dna, confidence, seed)
+        c["score"] = s
+        bucket, reason = scoring.assign_bucket(c, comps)
+        c["bucket"] = bucket
+        c["bucket_reason"] = reason
+        c["anchor"] = _nearest_loved_anchor(c["dna"], loved_dna) or c.get("anchor")
+
+    picks = scoring.select_with_buckets_mmr(scored, n=12)
+
+    # Stage 5: explanations (LLM prose only — ranking is already final)
+    source = "tmdb"
+    explanations: Dict[int, str] = {}
+    if groq_key and picks:
+        try:
+            explanations = await asyncio.to_thread(
+                _groq_explain, picks, _profile_text(profile), dna_words, groq_key)
+        except Exception as e:
+            print(f"Groq explanations failed, using templates: {e}")
+        if explanations:
+            source = "ai"
+
+    drop = {"_score", "score", "dna", "themes", "directors", "top_cast",
+            "keywords", "genre_ids", "vote_count", "popularity"}
     out = []
-    for c in ranked[:12]:
-        item = {k: v for k, v in c.items() if k != "_score"}
-        meta = picks_meta.get(c["tmdb_id"], {})
-        item["explanation"] = meta.get("explanation") or _template_reason(c, profile)
-        item["anchor"] = meta.get("anchor") or c.get("anchor")
+    for c in picks:
+        item = {k: v for k, v in c.items() if k not in drop}
+        item["explanation"] = explanations.get(c["tmdb_id"]) or _template_reason_v2(
+            c, c.get("anchor"), dna_words)
         out.append(item)
 
-    # Log what we served (3-day rotation penalty) and prune stale rows
-    for item in out:
-        db.add(RecFeedback(tmdb_id=item["tmdb_id"], title=item["title"], action="shown"))
+    # Log what we served: RecFeedback drives the 3-day rotation penalty; RecEvent
+    # impressions (with bucket, position, predicted score, vote_count) power /analytics.
+    # Persist served picks' DNA too (warms the cache + lets /analytics measure diversity).
+    have_dna = {mid for (mid,) in db.query(MovieDNA.tmdb_id).filter(
+        MovieDNA.tmdb_id.in_([c["tmdb_id"] for c in picks])).all()}
+    for pos, c in enumerate(picks):
+        db.add(RecFeedback(tmdb_id=c["tmdb_id"], title=c["title"], action="shown"))
+        db.add(RecEvent(
+            tmdb_id=c["tmdb_id"], event_type="impression", bucket=c.get("bucket"),
+            position=pos, predicted_score=c.get("score"), vote_count=c.get("vote_count"),
+        ))
+        if c["tmdb_id"] not in have_dna:
+            db.add(MovieDNA(tmdb_id=c["tmdb_id"], axes=json.dumps(c.get("dna") or {}),
+                            themes=json.dumps(c.get("themes") or []), source="proxy"))
+            have_dna.add(c["tmdb_id"])
     db.query(RecFeedback).filter(
         RecFeedback.action == "shown",
         RecFeedback.created_at < datetime.utcnow() - timedelta(days=14),
+    ).delete()
+    db.query(RecEvent).filter(
+        RecEvent.created_at < datetime.utcnow() - timedelta(days=90),
     ).delete()
     db.commit()
 
@@ -720,6 +865,7 @@ async def get_recommendations(
         "people": [name for _pid, name, _role in profile["loved_people"]][:4],
         "genres": [GENRE_MAP[g] for g, _cnt in profile["loved_genres"].most_common(3)
                    if g in GENRE_MAP],
+        "dna": dna_words,
         "tone": analysis.get("tone", ""),
     }
     payload = {"recommendations": out, "source": source, "taste": taste_strip}

@@ -5,7 +5,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.database import init_db
-from backend.routers import movies, ratings, watchlist, recommendations, rec_feedback
+from backend.routers import (
+    movies, ratings, watchlist, recommendations, rec_feedback, events, analytics,
+)
 
 app = FastAPI(title="Movie Night AI")
 
@@ -28,3 +30,5 @@ app.include_router(ratings.router, prefix="/ratings", tags=["ratings"])
 app.include_router(watchlist.router, prefix="/watchlist", tags=["watchlist"])
 app.include_router(recommendations.router, prefix="/recommendations", tags=["recommendations"])
 app.include_router(rec_feedback.router, prefix="/rec_feedback", tags=["rec_feedback"])
+app.include_router(events.router, prefix="/events", tags=["events"])
+app.include_router(analytics.router, prefix="/analytics", tags=["analytics"])

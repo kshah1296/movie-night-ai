@@ -46,8 +46,10 @@ export interface Recommendation {
   title: string;
   year: number | null;
   explanation: string;
-  anchor?: string | null;   // loved movie this pick traces back to
+  anchor?: string | null;   // loved movie this pick traces back to (nearest by Taste DNA)
   channel?: string;         // retrieval channel: similar | keywords | people | hidden-gem | popular | wildcard
+  bucket?: string;          // product bucket: Safe Picks | Hidden Gems | Expand Your Taste | …
+  bucket_reason?: string;   // one-line why-this-bucket
   genres: string[];
   poster_path: string | null;
   vote_average: number;
@@ -58,6 +60,7 @@ export interface TasteInfo {
   keywords: string[];
   people: string[];
   genres: string[];
+  dna?: string[];           // top Taste-DNA traits, e.g. ["slow-burn","character-driven","cerebral"]
   tone: string;
 }
 
@@ -263,3 +266,22 @@ export const sendRecFeedback = (data: { tmdb_id: number; title?: string }) =>
 
 export const undoRecFeedback = (tmdb_id: number) =>
   req<{ message: string }>(`/rec_feedback/${tmdb_id}`, { method: "DELETE" });
+
+// Implicit-feedback events that power /analytics. Fire-and-forget — never blocks the
+// UI and never throws (analytics is best-effort).
+export type RecEventType =
+  | "click" | "trailer" | "share" | "watchlist_add" | "watchlist_remove" | "skip";
+
+export function logEvent(
+  tmdb_id: number,
+  event_type: RecEventType,
+  opts?: { bucket?: string | null; position?: number },
+): void {
+  req("/events/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      tmdb_id, event_type, bucket: opts?.bucket ?? undefined, position: opts?.position,
+    }),
+  }).catch(() => {});
+}

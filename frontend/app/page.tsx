@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
   getRecommendations, rateAndAddWatched, addToWatchlist, deleteRating,
-  sendRecFeedback, getRatings, getWatchlist,
+  sendRecFeedback, getRatings, getWatchlist, logEvent,
   type Recommendation, type TasteInfo,
 } from "@/lib/api";
 import MovieCard from "@/components/MovieCard";
@@ -198,6 +198,7 @@ export default function HomePage() {
 
     setWatchlisted((prev) => ({ ...prev, [id]: true }));
     showToast(`Added "${rec.title}" to watchlist`);
+    logEvent(id, "watchlist_add", { bucket: rec.bucket });
 
     try {
       await addToWatchlist({ tmdb_id: id, title: rec.title, poster_path: rec.poster_path, genres: rec.genres, year });
@@ -211,6 +212,7 @@ export default function HomePage() {
   // races the feedback POST (P2-4) and is always reversible within the window.
   function handleNotInterested(rec: Recommendation) {
     const idx = recs.findIndex((r) => r.tmdb_id === rec.tmdb_id);
+    logEvent(rec.tmdb_id, "skip", { bucket: rec.bucket });
     setRecs((cur) => cur.filter((r) => r.tmdb_id !== rec.tmdb_id));
 
     const timer = setTimeout(() => {
@@ -387,11 +389,17 @@ export default function HomePage() {
       )}
 
       {/* "Your taste" strip — read-only summary of what the engine inferred (P1-8) */}
-      {taste && (taste.keywords.length > 0 || taste.people.length > 0 || taste.genres.length > 0) && (
+      {taste && ((taste.dna?.length ?? 0) > 0 || taste.keywords.length > 0 || taste.people.length > 0 || taste.genres.length > 0) && (
         <div className="chip-row" style={{ marginBottom: "var(--space-3)" }}>
           <span style={{ color: "var(--text-3)", fontSize: "0.7rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", marginRight: "0.15rem", flexShrink: 0 }}>
             What we&apos;ve learned
           </span>
+          {(taste.dna ?? []).map((t) => (
+            <span key={`d-${t}`} className="taste-pill" title="A core trait of your taste — your Taste DNA"
+              style={{ borderColor: "var(--accent)", color: "var(--text-1)" }}>
+              {t}
+            </span>
+          ))}
           {taste.genres.map((t) => <span key={`g-${t}`} className="taste-pill" title="Inferred from your ratings">{t}</span>)}
           {taste.people.map((t) => <span key={`p-${t}`} className="taste-pill" title="A name that recurs in films you rated highly">🎬 {t}</span>)}
           {taste.keywords.map((t) => <span key={`k-${t}`} className="taste-pill" title="A theme that recurs in films you rated highly">{t}</span>)}
@@ -476,13 +484,15 @@ export default function HomePage() {
               body: rec.explanation,
               bodyEmphasis: true,
               kicker: rec.anchor ? `Inspired by ${rec.anchor}` : undefined,
+              bucket: rec.bucket,
+              bucketReason: rec.bucket_reason,
             }}
             index={i}
             rating={ratings[rec.tmdb_id] ?? 0}
             inWatchlist={watchlisted[rec.tmdb_id] ?? false}
             isWatched={false}
             ratings={cardRatings[rec.tmdb_id]}
-            onOpen={() => setModalId(rec.tmdb_id)}
+            onOpen={() => { logEvent(rec.tmdb_id, "click", { bucket: rec.bucket, position: i }); setModalId(rec.tmdb_id); }}
             onRate={(r) => handleRate(rec, r)}
             onWatchlist={() => handleAddWatchlist(rec)}
             onDismiss={() => handleNotInterested(rec)}

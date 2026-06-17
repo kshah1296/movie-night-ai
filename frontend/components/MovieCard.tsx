@@ -5,6 +5,16 @@ import Poster from "@/components/Poster";
 import RatingBadges from "@/components/RatingBadges";
 import type { MovieRatings } from "@/lib/api";
 
+// Per-bucket accent colors for the small tag (quick visual scanning).
+const BUCKET_COLORS: Record<string, string> = {
+  "Safe Picks": "#a855f7",
+  "Hidden Gems": "#fbbf24",
+  "Expand Your Taste": "#38bdf8",
+  "Critically Acclaimed": "#34d399",
+  "Underseen Favorites": "#f472b6",
+  "Wildcard": "#fb923c",
+};
+
 export interface MovieCardData {
   id: number;
   title: string;
@@ -14,6 +24,8 @@ export interface MovieCardData {
   body: string;           // overview (search) or AI explanation (For You)
   bodyEmphasis?: boolean; // true = brighter, 3-line body (For You explanation style)
   kicker?: string;        // small gradient-purple line above the title, e.g. "Because you loved Heat"
+  bucket?: string;        // recommendation bucket, e.g. "Hidden Gems" — renders a small tag
+  bucketReason?: string;  // tooltip explaining the bucket
 }
 
 interface MovieCardProps {
@@ -52,6 +64,22 @@ export default function MovieCard({
         <Poster path={movie.poster_path} alt={movie.title} voteAverage={movie.vote_average} />
 
         <div style={{ flex: 1, minWidth: 0 }}>
+          {movie.bucket && (
+            <span
+              title={movie.bucketReason}
+              style={{
+                display: "inline-block", marginBottom: "0.3rem",
+                fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.04em",
+                textTransform: "uppercase", padding: "0.12rem 0.45rem",
+                borderRadius: "999px", whiteSpace: "nowrap",
+                color: BUCKET_COLORS[movie.bucket] ?? "var(--text-2)",
+                border: `1px solid ${BUCKET_COLORS[movie.bucket] ?? "var(--border-strong)"}`,
+                background: "color-mix(in srgb, " + (BUCKET_COLORS[movie.bucket] ?? "var(--text-3)") + " 12%, transparent)",
+              }}
+            >
+              {movie.bucket}
+            </span>
+          )}
           {movie.kicker && (
             <p style={{
               color: "var(--accent)",

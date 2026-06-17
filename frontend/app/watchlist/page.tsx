@@ -13,6 +13,7 @@ import StarRating from "@/components/StarRating";
 import Poster from "@/components/Poster";
 import RatingBadges from "@/components/RatingBadges";
 import { useCardRatings } from "@/lib/ratings";
+import { logEvent } from "@/lib/api";
 import Toast from "@/components/Toast";
 import { SkeletonGrid } from "@/components/SkeletonCard";
 import MovieModal from "@/components/MovieModal";
@@ -172,6 +173,7 @@ export default function WatchlistPage() {
             <Link
               href="/share"
               className="btn-secondary"
+              onClick={() => logEvent(0, "share")}
               style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "0.4rem" }}
             >
               <span aria-hidden="true">🔗</span> Share list
