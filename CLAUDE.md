@@ -70,7 +70,7 @@ FastAPI app, run from the **repo root** (the `backend/` folder is a Python packa
 | `routers/events.py` | `POST /events` — logs client engagement (click/trailer/share/watchlist_add/remove/skip); `impression` is server-only |
 | `routers/analytics.py` | `GET /analytics?days=N` — CTR, watchlist conversion, acceptance, rating-prediction correlation, novelty, diversity (backend-only, curlable) |
 | `dna.py` | Pure module: 10 Taste-DNA axes, `proxy_dna()` (deterministic), `llm_score_dna()` (Groq), `aggregate_profile_dna()`, `dna_distance()`, `axes_to_words()` |
-| `scoring.py` | Pure module: `score_candidate()` (hybrid formula), `assign_bucket()`, `select_with_buckets_mmr()` (diversity caps). Replaces LLM ranking. Unit-tested in `test_scoring.py` |
+| `scoring.py` | Pure module: `score_candidate()` (hybrid formula), `assign_bucket()`, `select_with_buckets_mmr()` (diversity caps). Replaces LLM ranking. Unit-tested in `tests/unit/` |
 
 SQLite DB file (`movie_night.db`) is created at the repo root on first startup; `init_db()` auto-creates any new tables (never ALTERs existing ones).
 
@@ -207,7 +207,10 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 - **Analytics**: every served rec logs an impression + predicted score; `GET /analytics` reports CTR, conversion, acceptance, prediction accuracy, novelty, diversity
 
 ### Testing
-- `venv/bin/pytest backend/test_scoring.py` — deterministic tests for the scorer, bucketing, and MMR diversity caps (no network). Install pytest into the venv if missing (`venv/bin/pip install pytest`).
+- Unit suite lives in **`tests/unit/`** (`test_dna.py`, `test_scoring.py`, `test_recommendations.py`, `test_analytics.py`) — deterministic, no network (the one Groq call is monkeypatched). Config in `pytest.ini` (`pythonpath = .`, `testpaths = tests/unit`).
+- Run from repo root: `venv/bin/pytest` · coverage: `venv/bin/pytest --cov=backend --cov-report=term-missing`.
+- Dev deps in `requirements-dev.txt` (`venv/bin/pip install -r requirements-dev.txt`).
+- Covers the pure logic (Taste-DNA math, hybrid scorer, bucketing + MMR caps, profile builder, analytics math). Router endpoints (DB/HTTP) would need a separate integration suite.
 
 ## Design & QA history (see `Improvement_plans/`)
 

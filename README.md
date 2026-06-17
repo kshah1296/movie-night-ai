@@ -80,6 +80,16 @@ npm run dev          # http://localhost:3000
 ./start.sh           # starts backend (:8000) and frontend (:3000), Ctrl+C stops both
 ```
 
+### Tests
+The backend has a deterministic unit suite (no network) in [`tests/unit/`](./tests/unit) covering the
+Taste‑DNA math, the hybrid scorer, bucketing + diversity caps, the taste‑profile builder, and the
+analytics metrics.
+```bash
+venv/bin/pip install -r requirements-dev.txt
+venv/bin/pytest                                  # run the suite
+venv/bin/pytest --cov=backend --cov-report=term-missing   # with coverage
+```
+
 ---
 
 ## 📂 Project structure
@@ -93,14 +103,16 @@ movie-night-ai/
 │   │                        #   MovieDNA, TasteProfile, RecFeedback, RecEvent, TasteAnalysis
 │   ├── dna.py               # Taste-DNA: 10 axes, proxy + LLM scoring, aggregation, distance
 │   ├── scoring.py           # hybrid scorer + buckets + MMR diversity (replaces LLM ranking)
-│   ├── test_scoring.py      # pytest: scoring + bucketing + diversity caps
 │   └── routers/             # movies, ratings, watchlist, recommendations,
 │                            #   rec_feedback, events, analytics
+├── tests/unit/              # pytest suite: dna, scoring, profile builder, analytics math
 ├── frontend/                # Next.js 16 App Router
 │   ├── app/                 # For You (/), Discover (/search), Watchlist, Ratings, Share
 │   ├── components/          # MovieCard, PosterCard, Poster, RatingBadges, MovieModal, …
 │   └── lib/                 # api.ts, tmdb.ts, streaming.ts, ratings.ts, providers.ts
 ├── Improvement_plans/       # design + QA planning docs
+├── pytest.ini               # test config (pythonpath, testpaths)
+├── requirements-dev.txt     # test deps (pytest, pytest-cov)
 ├── .env.example             # backend env template
 └── start.sh                 # run backend + frontend together
 ```
