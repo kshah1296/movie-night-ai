@@ -47,6 +47,21 @@ class MovieFacets(Base):
     fetched_at = Column(DateTime, server_default=func.now())
 
 
+class MovieRatingsCache(Base):
+    """External critic/audience scores (OMDb: IMDb + Rotten Tomatoes + Metacritic).
+    Fetched once per movie, then read from here — protects the OMDb free-tier
+    quota (1000/day). Refreshed only when a row is older than the TTL."""
+    __tablename__ = "movie_ratings_cache"
+
+    tmdb_id = Column(Integer, primary_key=True, autoincrement=False)
+    imdb = Column(String, nullable=True)             # "8.8"
+    imdb_votes = Column(String, nullable=True)       # "2,400,123"
+    imdb_id = Column(String, nullable=True)          # "tt1375666"
+    rotten_tomatoes = Column(String, nullable=True)  # "91%"
+    metacritic = Column(String, nullable=True)       # "74/100"
+    fetched_at = Column(DateTime, server_default=func.now())
+
+
 class RecFeedback(Base):
     """Feedback on served recommendations.
     action = "not_interested" (user clicked ✕; hard-excluded + used as an avoid exemplar)

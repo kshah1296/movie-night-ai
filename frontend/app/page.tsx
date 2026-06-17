@@ -16,6 +16,7 @@ import { SkeletonGrid } from "@/components/SkeletonCard";
 import {
   STREAMING_PROVIDERS, loadServices, saveServices, loadStreamingOnly, saveStreamingOnly,
 } from "@/lib/streaming";
+import { useCardRatings } from "@/lib/ratings";
 
 const MOODS = [
   { id: "cozy", emoji: "🛋️", label: "Cozy" },
@@ -232,6 +233,10 @@ export default function HomePage() {
       },
     });
   }
+
+  // Batch-load external scores (IMDb/RT/MC) for the current rec set. Must run before
+  // the early returns below so hook order stays stable.
+  const cardRatings = useCardRatings(recs.map((r) => r.tmdb_id));
 
   const moodMeta = MOODS.find((m) => m.id === selectedMood);
   const heading = selectedGenre
@@ -476,6 +481,7 @@ export default function HomePage() {
             rating={ratings[rec.tmdb_id] ?? 0}
             inWatchlist={watchlisted[rec.tmdb_id] ?? false}
             isWatched={false}
+            ratings={cardRatings[rec.tmdb_id]}
             onOpen={() => setModalId(rec.tmdb_id)}
             onRate={(r) => handleRate(rec, r)}
             onWatchlist={() => handleAddWatchlist(rec)}

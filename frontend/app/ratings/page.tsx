@@ -5,6 +5,8 @@ import Link from "next/link";
 import { getRatings, upsertRating, deleteRating, type Rating } from "@/lib/api";
 import StarRating from "@/components/StarRating";
 import Poster from "@/components/Poster";
+import RatingBadges from "@/components/RatingBadges";
+import { useCardRatings } from "@/lib/ratings";
 import Toast from "@/components/Toast";
 import { SkeletonGrid } from "@/components/SkeletonCard";
 import PageHeader from "@/components/PageHeader";
@@ -42,6 +44,9 @@ export default function RatingsPage() {
       setToast("Couldn't save — is the backend running?");
     }
   }
+
+  // External scores (IMDb/RT/MC), batched for all rated movies.
+  const cardRatings = useCardRatings(ratings.map((r) => r.tmdb_id));
 
   return (
     <div>
@@ -87,9 +92,10 @@ export default function RatingsPage() {
                       <h3 style={{ fontWeight: 700, fontSize: "0.95rem", marginBottom: "0.15rem", lineHeight: 1.3 }}>
                         {r.title}
                       </h3>
-                      <p style={{ color: "var(--text-2)", fontSize: "var(--font-xs)", marginBottom: "0.6rem" }}>
+                      <p style={{ color: "var(--text-2)", fontSize: "var(--font-xs)", marginBottom: "0.5rem" }}>
                         {r.year} · {r.genres.slice(0, 2).join(", ")}
                       </p>
+                      <RatingBadges ratings={cardRatings[r.tmdb_id]} style={{ marginBottom: "0.5rem" }} />
                       <StarRating value={r.rating} onChange={(n) => handleRatingChange(r, n)} size="sm" />
                       <button
                         className="btn-ghost-danger"

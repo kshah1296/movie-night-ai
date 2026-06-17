@@ -11,6 +11,8 @@ import {
 } from "@/lib/api";
 import StarRating from "@/components/StarRating";
 import Poster from "@/components/Poster";
+import RatingBadges from "@/components/RatingBadges";
+import { useCardRatings } from "@/lib/ratings";
 import Toast from "@/components/Toast";
 import { SkeletonGrid } from "@/components/SkeletonCard";
 import MovieModal from "@/components/MovieModal";
@@ -129,6 +131,9 @@ export default function WatchlistPage() {
 
   const unwatchedCount = items.filter((i) => !i.watched).length;
   const watchedCount = items.filter((i) => i.watched).length;
+
+  // External scores (IMDb/RT/MC), batched for the whole list.
+  const cardRatings = useCardRatings(items.map((i) => i.tmdb_id));
 
   return (
     <div>
@@ -257,6 +262,7 @@ export default function WatchlistPage() {
                       <p style={{ color: "var(--text-2)", fontSize: "var(--font-xs)", marginBottom: "0.5rem" }}>
                         {item.year} · {item.genres.slice(0, 2).join(", ")}
                       </p>
+                      <RatingBadges ratings={cardRatings[item.tmdb_id]} style={{ marginBottom: "0.5rem" }} />
 
                       {item.watched && (
                         <div style={{ marginBottom: "0.5rem" }} onClick={(e) => e.stopPropagation()}>

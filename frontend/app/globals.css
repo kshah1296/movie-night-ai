@@ -582,6 +582,30 @@ body::before {
 
 .search-clear:hover { background: var(--border-strong); color: var(--text-1); }
 
+/* Clickable streaming/store provider badge (modal) — deep-links to the service */
+.provider-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 0.3rem 0.6rem;
+  font-size: var(--font-xs);
+  font-weight: 500;
+  color: var(--text-1);
+  text-decoration: none;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+}
+
+a.provider-badge:hover {
+  border-color: var(--accent);
+  background: var(--surface-3);
+  transform: translateY(-1px);
+}
+
+a.provider-badge:active { transform: scale(0.98); }
+
 /* Modal loading skeleton */
 .modal-skel {
   padding: 1.5rem;

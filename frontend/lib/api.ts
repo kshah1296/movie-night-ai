@@ -169,6 +169,10 @@ export interface MovieRatings {
 export const getMovieRatings = (tmdb_id: number) =>
   req<MovieRatings>(`/movies/${tmdb_id}/ratings`);
 
+// Batch — returns a map keyed by tmdb_id (as a string), each value possibly empty {}.
+export const getMovieRatingsBatch = (ids: number[]) =>
+  req<Record<string, MovieRatings>>(`/movies/ratings?ids=${ids.join(",")}`);
+
 // Ratings
 export const getRatings = () => req<Rating[]>("/ratings");
 

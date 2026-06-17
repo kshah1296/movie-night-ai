@@ -19,6 +19,7 @@ import {
   type DiscoverParams,
 } from "@/lib/api";
 import { genreIdsToNames, GENRE_MAP } from "@/lib/tmdb";
+import { useCardRatings } from "@/lib/ratings";
 import PosterCard from "@/components/PosterCard";
 import MovieModal from "@/components/MovieModal";
 import Toast from "@/components/Toast";
@@ -420,6 +421,10 @@ function SearchPageInner() {
   const sortLabel = SORTS.find((s) => s.key === effectiveSortKey)?.label ?? "";
   const chips = activeFilterChips(filters);
 
+  // Batch-load external scores (IMDb/RT/MC) for the currently loaded results.
+  const resultIds = useMemo(() => results.map((m) => m.id), [results]);
+  const cardRatings = useCardRatings(resultIds);
+
   return (
     <div>
       <Toast message={toast} onDismiss={() => setToast("")} />
@@ -650,6 +655,7 @@ function SearchPageInner() {
                 rating={ratings[movie.id] ?? 0}
                 inWatchlist={watchlisted[movie.id] ?? false}
                 isWatched={watched[movie.id] ?? false}
+                ratings={cardRatings[movie.id]}
                 onOpen={() => setModalId(movie.id)}
                 onRate={(r) => handleRate(movie, r)}
                 onWatchlist={() => handleWatchlist(movie)}

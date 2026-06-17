@@ -8,7 +8,9 @@ import {
   type MovieDetail, type MovieProviders, type MovieRatings,
 } from "@/lib/api";
 import { posterUrl } from "@/lib/tmdb";
+import { providerLink } from "@/lib/providers";
 import StarRating from "@/components/StarRating";
+import RatingBadges from "@/components/RatingBadges";
 import Toast from "@/components/Toast";
 
 interface Props {
@@ -53,7 +55,12 @@ export default function MovieModal({
       if (focusables.length === 0) return;
       const first = focusables[0];
       const last = focusables[focusables.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
+      // Initial focus sits on the dialog container itself — send the first Tab/Shift+Tab
+      // to the correct end so focus can never escape backward out of the modal.
+      if (document.activeElement === root) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && document.activeElement === first) {
         e.preventDefault();
         last.focus();
       } else if (!e.shiftKey && document.activeElement === last) {
@@ -70,7 +77,9 @@ export default function MovieModal({
     main?.setAttribute("aria-hidden", "true");
     nav?.setAttribute("aria-hidden", "true");
 
-    setTimeout(() => closeRef.current?.focus(), 50);
+    // Focus the dialog container (not the ✕) so keyboard users land inside the modal
+    // without a focus-visible ring painting on the close button on every open.
+    setTimeout(() => dialogRef.current?.focus(), 50);
 
     return () => {
       window.removeEventListener("keydown", onKey);
@@ -141,12 +150,14 @@ export default function MovieModal({
     >
       <div
         ref={dialogRef}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         style={{
           background: "var(--surface)", borderRadius: "var(--radius-lg)", width: "100%",
           maxWidth: 680, maxHeight: "90vh", overflowY: "auto",
           position: "relative",
           boxShadow: "var(--shadow-lg)",
+          outline: "none",
           animation: "modal-pop 0.25s ease-out",
         }}
       >
@@ -156,7 +167,8 @@ export default function MovieModal({
           onClick={onClose}
           style={{
             position: "absolute", top: "0.75rem", right: "0.75rem", zIndex: 10,
-            background: "rgba(0,0,0,0.65)", border: "none", borderRadius: "50%",
+            background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.18)",
+            backdropFilter: "blur(6px)", borderRadius: "50%",
             width: 44, height: 44, cursor: "pointer", color: "white",
             fontSize: "1.1rem", display: "flex", alignItems: "center", justifyContent: "center",
           }}
@@ -205,29 +217,12 @@ export default function MovieModal({
                   {[year, runtime, movie.genres.slice(0, 3).map(g => g.name).join(" · ")].filter(Boolean).join(" · ")}
                 </p>
                 {/* Critic / audience scores (TMDB always; IMDb/RT/Metacritic via OMDb) */}
-                <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "0.75rem" }}>
-                  {movie.vote_average > 0 && (
-                    <ScoreBadge label="TMDB" value={`★ ${movie.vote_average.toFixed(1)}`} color="#facc15" />
-                  )}
-                  {ratings?.imdb && (
-                    <ScoreBadge
-                      label="IMDb"
-                      value={ratings.imdb}
-                      color="#f5c518"
-                      href={ratings.imdb_id ? `https://www.imdb.com/title/${ratings.imdb_id}/` : undefined}
-                    />
-                  )}
-                  {ratings?.rotten_tomatoes && (
-                    <ScoreBadge
-                      label={rtIsFresh(ratings.rotten_tomatoes) ? "🍅 RT" : "🤢 RT"}
-                      value={ratings.rotten_tomatoes}
-                      color={rtIsFresh(ratings.rotten_tomatoes) ? "#fa320a" : "#5fae3a"}
-                    />
-                  )}
-                  {ratings?.metacritic && (
-                    <ScoreBadge label="Metacritic" value={ratings.metacritic} color="#6dc849" />
-                  )}
-                </div>
+                <RatingBadges
+                  ratings={ratings}
+                  tmdb={movie.vote_average}
+                  imdbLink
+                  style={{ marginBottom: "0.75rem" }}
+                />
                 <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
                   <StarRating value={rating} onChange={handleRate} size="md" />
                   {rating === 0 && (
@@ -260,7 +255,7 @@ export default function MovieModal({
 
             {movie.tagline && (
               <p style={{ color: "var(--accent)", fontStyle: "italic", fontSize: "0.85rem", marginTop: "1rem" }}>
-                "{movie.tagline}"
+                &ldquo;{movie.tagline}&rdquo;
               </p>
             )}
 
@@ -278,7 +273,7 @@ export default function MovieModal({
                     </p>
                     <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                       {streamingProviders.map((p) => (
-                        <ProviderBadge key={p.provider_id} provider={p} />
+                        <ProviderBadge key={p.provider_id} provider={p} title={movie.title} fallback={providers?.link} />
                       ))}
                     </div>
                   </div>
@@ -290,7 +285,7 @@ export default function MovieModal({
                     </p>
                     <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                       {rentProviders.slice(0, 6).map((p) => (
-                        <ProviderBadge key={p.provider_id} provider={p} />
+                        <ProviderBadge key={p.provider_id} provider={p} title={movie.title} fallback={providers?.link} />
                       ))}
                     </div>
                   </div>
@@ -346,50 +341,37 @@ export default function MovieModal({
   );
 }
 
-// "91%" -> true if Tomatometer is Fresh (>= 60%)
-function rtIsFresh(value: string): boolean {
-  const n = parseInt(value, 10);
-  return Number.isNaN(n) ? true : n >= 60;
-}
-
-function ScoreBadge({ label, value, color, href }: { label: string; value: string; color: string; href?: string }) {
-  const inner = (
-    <>
-      <span style={{ color: "var(--text-2)", fontWeight: 600 }}>{label}</span>
-      <span style={{ color, fontWeight: 700 }}>{value}</span>
-    </>
+function ProviderBadge(
+  { provider, title, fallback }:
+  { provider: { provider_id: number; provider_name: string; logo_path: string }; title: string; fallback?: string }
+) {
+  const href = providerLink(provider.provider_id, title, fallback);
+  const logo = (
+    <Image
+      src={`https://image.tmdb.org/t/p/w45${provider.logo_path}`}
+      alt={provider.provider_name}
+      width={20} height={20}
+      style={{ borderRadius: "4px", objectFit: "cover" }}
+    />
   );
-  const style: React.CSSProperties = {
-    display: "inline-flex", alignItems: "center", gap: "0.3rem",
-    background: "var(--surface-2)", borderRadius: "0.5rem",
-    padding: "0.25rem 0.55rem", fontSize: "0.78rem", textDecoration: "none",
-  };
-  return href ? (
-    <a href={href} target="_blank" rel="noopener noreferrer" style={style} title={`${label} ${value} — open on IMDb`}>
-      {inner}
-    </a>
-  ) : (
-    <span style={style} title={`${label} ${value}`}>{inner}</span>
-  );
-}
 
-function ProviderBadge({ provider }: { provider: { provider_name: string; logo_path: string } }) {
+  if (!href) {
+    return (
+      <span className="provider-badge" title={provider.provider_name}>
+        {logo}<span>{provider.provider_name}</span>
+      </span>
+    );
+  }
   return (
-    <div
-      title={provider.provider_name}
-      style={{
-        display: "flex", alignItems: "center", gap: "0.4rem",
-        background: "var(--surface-2)", borderRadius: "0.5rem",
-        padding: "0.3rem 0.6rem", fontSize: "0.75rem", fontWeight: 500,
-      }}
+    <a
+      className="provider-badge"
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`Open ${provider.provider_name}`}
     >
-      <Image
-        src={`https://image.tmdb.org/t/p/w45${provider.logo_path}`}
-        alt={provider.provider_name}
-        width={20} height={20}
-        style={{ borderRadius: "4px", objectFit: "cover" }}
-      />
-      <span style={{ color: "#d4d4d8" }}>{provider.provider_name}</span>
-    </div>
+      {logo}<span>{provider.provider_name}</span>
+      <span aria-hidden="true" style={{ color: "var(--text-3)", fontSize: "0.7rem" }}>↗</span>
+    </a>
   );
 }

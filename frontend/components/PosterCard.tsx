@@ -2,7 +2,9 @@
 
 import Image from "next/image";
 import StarRating from "@/components/StarRating";
+import RatingBadges from "@/components/RatingBadges";
 import { posterUrl } from "@/lib/tmdb";
+import type { MovieRatings } from "@/lib/api";
 
 export interface PosterCardData {
   id: number;
@@ -18,6 +20,7 @@ interface PosterCardProps {
   rating: number;       // 0 = unrated
   inWatchlist: boolean;
   isWatched: boolean;
+  ratings?: MovieRatings; // external critic/audience scores (IMDb/RT/MC)
   onOpen: () => void;
   onRate: (rating: number) => void;
   onWatchlist: () => void;
@@ -26,7 +29,7 @@ interface PosterCardProps {
 /** Poster-forward card for Discover: the poster is the hero; title/meta sit beneath,
  * with inline rate + watchlist preserved (overview lives in the modal). */
 export default function PosterCard({
-  movie, index, rating, inWatchlist, isWatched, onOpen, onRate, onWatchlist,
+  movie, index, rating, inWatchlist, isWatched, ratings, onOpen, onRate, onWatchlist,
 }: PosterCardProps) {
   const poster = posterUrl(movie.poster_path);
   const saved = isWatched || inWatchlist || rating > 0;
@@ -80,6 +83,7 @@ export default function PosterCard({
         <p style={{ color: "var(--text-2)", fontSize: "var(--font-xs)" }}>
           {movie.metaLine}
         </p>
+        <RatingBadges ratings={ratings} />
 
         <div style={{ marginTop: "auto", paddingTop: "0.4rem" }} onClick={(e) => e.stopPropagation()}>
           <StarRating value={rating} onChange={onRate} size="sm" label={`Rate ${movie.title}`} />

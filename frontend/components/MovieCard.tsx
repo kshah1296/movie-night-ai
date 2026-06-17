@@ -2,6 +2,8 @@
 
 import StarRating from "@/components/StarRating";
 import Poster from "@/components/Poster";
+import RatingBadges from "@/components/RatingBadges";
+import type { MovieRatings } from "@/lib/api";
 
 export interface MovieCardData {
   id: number;
@@ -20,6 +22,7 @@ interface MovieCardProps {
   rating: number;         // 0 = unrated
   inWatchlist: boolean;
   isWatched: boolean;
+  ratings?: MovieRatings; // external critic/audience scores (IMDb/RT/MC)
   onOpen: () => void;
   onRate: (rating: number) => void;
   onWatchlist: () => void;
@@ -27,7 +30,7 @@ interface MovieCardProps {
 }
 
 export default function MovieCard({
-  movie, index, rating, inWatchlist, isWatched, onOpen, onRate, onWatchlist, onDismiss,
+  movie, index, rating, inWatchlist, isWatched, ratings, onOpen, onRate, onWatchlist, onDismiss,
 }: MovieCardProps) {
   return (
     <div
@@ -73,6 +76,7 @@ export default function MovieCard({
           <p style={{ color: "var(--text-2)", fontSize: "var(--font-xs)", marginBottom: "0.4rem" }}>
             {movie.metaLine}
           </p>
+          <RatingBadges ratings={ratings} style={{ marginBottom: "0.4rem" }} />
           <p style={{
             color: movie.bodyEmphasis ? "#e4e4e7" : "var(--text-2)",
             fontSize: movie.bodyEmphasis ? "var(--font-sm)" : "var(--font-xs)",

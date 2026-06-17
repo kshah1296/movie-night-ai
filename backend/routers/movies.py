@@ -1,17 +1,24 @@
+import asyncio
 import os
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+
+from backend.database import get_db
+from backend.models import MovieRatingsCache
 
 router = APIRouter()
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 OMDB_BASE_URL = "https://www.omdbapi.com/"
 
-# Process-lifetime cache for external ratings (OMDb free tier = 1000/day; ratings change slowly)
-_ratings_cache: dict = {}
+# External ratings (OMDb free tier = 1000/day) are cached in the DB; refresh past this age.
+RATINGS_TTL = timedelta(days=14)
+RATINGS_BATCH_MAX = 30   # hard cap on ids per batch request
+RATINGS_CONCURRENCY = 5  # max simultaneous OMDb fetches
 
 ALLOWED_SORTS = {
     "popularity.desc",
@@ -135,52 +142,135 @@ async def get_movie_providers(tmdb_id: int):
     return data.get("results", {}).get("US", {})
 
 
-# Must be defined BEFORE /{tmdb_id} to avoid route shadowing.
-# External critic/audience scores via OMDb (IMDb + Rotten Tomatoes + Metacritic).
-# Degrades gracefully to {} when OMDB_API_KEY is unset or the movie has no IMDb id.
-@router.get("/{tmdb_id}/ratings")
-async def get_movie_ratings(tmdb_id: int):
-    if tmdb_id in _ratings_cache:
-        return _ratings_cache[tmdb_id]
+_RATING_FIELDS = ("imdb", "imdb_votes", "imdb_id", "rotten_tomatoes", "metacritic")
 
-    omdb_key = os.getenv("OMDB_API_KEY")
-    if not omdb_key:
-        return {}
 
+def _row_to_dict(row: MovieRatingsCache) -> dict:
+    return {f: getattr(row, f) for f in _RATING_FIELDS}
+
+
+def _is_fresh(row: MovieRatingsCache) -> bool:
+    return bool(row.fetched_at) and (datetime.utcnow() - row.fetched_at) < RATINGS_TTL
+
+
+def _upsert_ratings(db: Session, tmdb_id: int, data: dict) -> None:
+    row = db.get(MovieRatingsCache, tmdb_id)
+    if row is None:
+        row = MovieRatingsCache(tmdb_id=tmdb_id)
+        db.add(row)
+    for f in _RATING_FIELDS:
+        setattr(row, f, data.get(f))
+    row.fetched_at = datetime.utcnow()
+
+
+async def _fetch_omdb_ratings(tmdb_id: int, omdb_key: str) -> Optional[dict]:
+    """Fetch external scores from OMDb. Returns a dict (possibly empty values) on a
+    successful response, or None on a transient/unfetchable failure (don't cache None)."""
     def clean(v):
         return v if v not in (None, "", "N/A") else None
 
     try:
         detail = await _tmdb_get(f"/movie/{tmdb_id}", {})
-        imdb_id = detail.get("imdb_id")
-        if not imdb_id:
-            return {}
+    except Exception:
+        return None
+    imdb_id = detail.get("imdb_id")
+    if not imdb_id:
+        return {f: None for f in _RATING_FIELDS}  # permanent: no IMDb id → cacheable empty
+
+    try:
         async with httpx.AsyncClient() as client:
             resp = await client.get(
-                OMDB_BASE_URL,
-                params={"i": imdb_id, "apikey": omdb_key},
-                timeout=10,
+                OMDB_BASE_URL, params={"i": imdb_id, "apikey": omdb_key}, timeout=10
             )
-        data = resp.json() if resp.status_code == 200 else {}
+        data = resp.json() if resp.status_code == 200 else None
     except Exception:
-        return {}
+        return None
 
     if not data or data.get("Response") == "False":
-        return {}
+        return None  # could be rate-limit/transient — retry next time
 
     by_source = {r.get("Source"): r.get("Value") for r in data.get("Ratings", [])}
     metascore = clean(data.get("Metascore"))
-    result = {
-        "imdb": clean(data.get("imdbRating")),                 # e.g. "8.8"
-        "imdb_votes": clean(data.get("imdbVotes")),            # e.g. "2,400,123"
-        "imdb_id": imdb_id,                                    # for a deep link
-        "rotten_tomatoes": clean(by_source.get("Rotten Tomatoes")),  # e.g. "91%"
+    return {
+        "imdb": clean(data.get("imdbRating")),
+        "imdb_votes": clean(data.get("imdbVotes")),
+        "imdb_id": imdb_id,
+        "rotten_tomatoes": clean(by_source.get("Rotten Tomatoes")),
         "metacritic": (f"{metascore}/100" if metascore else clean(by_source.get("Metacritic"))),
     }
-    # Only cache real results so a transient OMDb hiccup can be retried.
-    if any(result.get(k) for k in ("imdb", "rotten_tomatoes", "metacritic")):
-        _ratings_cache[tmdb_id] = result
+
+
+# Batch route — MUST be declared before /{tmdb_id} (and /{tmdb_id}/ratings) so the
+# literal "ratings" segment isn't captured by the int path param.
+@router.get("/ratings")
+async def get_movie_ratings_batch(
+    ids: str = Query(..., description="Comma-separated TMDB movie ids"),
+    db: Session = Depends(get_db),
+):
+    id_list, seen = [], set()
+    for part in ids.split(","):
+        part = part.strip()
+        if part.isdigit():
+            tid = int(part)
+            if tid not in seen:
+                seen.add(tid)
+                id_list.append(tid)
+    id_list = id_list[:RATINGS_BATCH_MAX]
+
+    result: dict = {}
+    misses = []
+    for tid in id_list:
+        row = db.get(MovieRatingsCache, tid)
+        if row is not None and _is_fresh(row):
+            result[str(tid)] = _row_to_dict(row)
+        else:
+            misses.append(tid)
+
+    omdb_key = os.getenv("OMDB_API_KEY")
+    if omdb_key and misses:
+        sem = asyncio.Semaphore(RATINGS_CONCURRENCY)
+
+        async def fetch_one(tid: int):
+            async with sem:
+                return tid, await _fetch_omdb_ratings(tid, omdb_key)
+
+        # Fetch concurrently, then write sequentially (single Session is not concurrency-safe).
+        for tid, data in await asyncio.gather(*(fetch_one(t) for t in misses)):
+            if data is None:
+                row = db.get(MovieRatingsCache, tid)  # serve stale on transient failure
+                result[str(tid)] = _row_to_dict(row) if row else {}
+            else:
+                result[str(tid)] = data
+                _upsert_ratings(db, tid, data)
+        db.commit()
+    else:
+        for tid in misses:
+            row = db.get(MovieRatingsCache, tid)
+            result[str(tid)] = _row_to_dict(row) if row else {}
+
     return result
+
+
+# Must be defined BEFORE /{tmdb_id} to avoid route shadowing.
+# External critic/audience scores via OMDb (IMDb + Rotten Tomatoes + Metacritic).
+# Degrades gracefully to {} when OMDB_API_KEY is unset or the movie has no IMDb id.
+@router.get("/{tmdb_id}/ratings")
+async def get_movie_ratings(tmdb_id: int, db: Session = Depends(get_db)):
+    row = db.get(MovieRatingsCache, tmdb_id)
+    if row is not None and _is_fresh(row):
+        return _row_to_dict(row)
+
+    omdb_key = os.getenv("OMDB_API_KEY")
+    if not omdb_key:
+        return _row_to_dict(row) if row else {}
+
+    data = await _fetch_omdb_ratings(tmdb_id, omdb_key)
+    if data is None:
+        return _row_to_dict(row) if row else {}  # serve stale on transient failure
+
+    _upsert_ratings(db, tmdb_id, data)
+    db.commit()
+    return data
 
 
 @router.get("/{tmdb_id}")
