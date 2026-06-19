@@ -2,8 +2,8 @@ import json
 from datetime import datetime, timezone
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
@@ -19,12 +19,12 @@ class WatchlistAdd(BaseModel):
     genres: Optional[List[str]] = []
     year: Optional[int] = None
     watched: Optional[bool] = False
-    post_watch_rating: Optional[float] = None
+    post_watch_rating: Optional[float] = Field(default=None, ge=1, le=5)
 
 
 class WatchlistUpdate(BaseModel):
     watched: Optional[bool] = None
-    post_watch_rating: Optional[float] = None
+    post_watch_rating: Optional[float] = Field(default=None, ge=1, le=5)
 
 
 def serialize(item: WatchlistItem) -> dict:
@@ -43,8 +43,14 @@ def serialize(item: WatchlistItem) -> dict:
 
 
 @router.get("/")
-def get_watchlist(db: Session = Depends(get_db)):
-    return [serialize(i) for i in db.query(WatchlistItem).all()]
+def get_watchlist(
+    limit: int = Query(1000, ge=1, le=5000),  # bounded response (audit L8)
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
+    rows = (db.query(WatchlistItem).order_by(WatchlistItem.added_at.desc())
+            .offset(offset).limit(limit).all())
+    return [serialize(i) for i in rows]
 
 
 @router.post("/")

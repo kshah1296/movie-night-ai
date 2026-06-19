@@ -16,9 +16,11 @@ A bold, colorful movie‑recommendation app that learns your taste and tells you
   - **"Not interested"** (with Undo) and a **streaming filter** to steer + scope picks
 - **Scores everywhere** — IMDb, 🍅 Rotten Tomatoes, and Metacritic on every card and in the modal (OMDb, cached).
 - **Discover** — a **poster‑forward grid**, sort + filter drawer (genre, decade, rating, runtime, streaming provider), title search with debounce, actor/director search, infinite scroll, and shareable URL‑encoded filters.
-- **Watchlist** — Up Next / Watched tabs, post‑watch ratings, remove with Undo, and a read‑only **Share** page.
+- **Watchlist** — built to answer *"what do I watch tonight?"*: **sort** (recently added · shortest runtime · highest rated · …), a **📺 "on my services"** filter that shows only what's streamable on your Netflix/Disney+/…, **runtime** filters, provider badges + runtime on each card, and a **🎲 Surprise me** button. Plus Up Next / Watched tabs, post‑watch ratings, remove with Undo, and a read‑only **Share** page.
 - **Ratings** — manage everything you've rated; these power the recommendations.
+- **Taste DNA page** — a radar of your 10 taste axes (slow‑burn ↔ fast, cerebral ↔ emotional, …) with per‑axis confidence, plus the genres, people, and themes that shape your picks. Makes the engine's model of you visible.
 - **Movie modal** — backdrop, cast, **clickable** streaming providers (deep‑link straight to Netflix/Disney+/…), trailer, and rate/watchlist actions.
+- **Learns from your ratings** — a linear **ranker is trained on your feedback** (`backend/train.py`) and only ships if it beats the previous scorer on an offline eval (time‑split, NDCG/Pearson). Ranking stays fully deterministic; the LLM never ranks.
 - **Self‑measuring** — every recommendation logs an impression + predicted score; a `GET /analytics` endpoint reports CTR, watchlist conversion, acceptance, rating‑prediction accuracy, novelty, and diversity.
 - **Accessible & responsive** — keyboard focus trap in dialogs, screen‑reader semantics, 44px touch targets, reduced‑motion support, WCAG‑contrast text.
 
@@ -30,7 +32,7 @@ A bold, colorful movie‑recommendation app that learns your taste and tells you
 |-------|-------|
 | **Frontend** | Next.js 16 (App Router) · React 19 · TypeScript · Tailwind v4 |
 | **Backend** | FastAPI · SQLAlchemy · SQLite |
-| **Recommendations** | Deterministic Taste‑DNA scorer + diversity buckets (`backend/dna.py`, `backend/scoring.py`) |
+| **Recommendations** | Taste‑DNA features + a **learned linear ranker** (trained on your ratings, eval‑gated) + diversity buckets (`backend/dna.py`, `backend/features.py`, `backend/scoring.py`, `backend/train.py`) |
 | **AI** | Groq API — `llama-3.3-70b-versatile` (DNA scoring, taste analysis, explanations) |
 | **Movie data** | TMDB (search, posters, cast, trailers, streaming providers) · OMDb (IMDb/RT/Metacritic scores) |
 
@@ -99,17 +101,22 @@ movie-night-ai/
 ├── backend/                 # FastAPI app (run from repo root)
 │   ├── main.py              # entry point, CORS, router registration
 │   ├── database.py          # SQLAlchemy engine + init_db()
-│   ├── models.py            # Rating, WatchlistItem, MovieFacets, MovieRatingsCache,
-│   │                        #   MovieDNA, TasteProfile, RecFeedback, RecEvent, TasteAnalysis
+│   ├── models.py            # Rating, WatchlistItem, MovieFacets, MovieRatingsCache, MovieMetaCache,
+│   │                        #   MovieDNA, TasteProfile(+Snapshot), RecFeedback, RecEvent, TasteAnalysis
+│   ├── config.py            # pydantic-settings (DATABASE_URL, ALLOWED_ORIGINS, API keys)
 │   ├── dna.py               # Taste-DNA: 10 axes, proxy + LLM scoring, aggregation, distance
-│   ├── scoring.py           # hybrid scorer + buckets + MMR diversity (replaces LLM ranking)
+│   ├── features.py          # shared train/serve feature extractor + learned-model application
+│   ├── scoring.py           # ranker (learned weights if active, else hand-tuned) + buckets + MMR
+│   ├── train.py             # learned-ranker trainer (numpy Ridge, eval-gated)
+│   ├── eval.py              # offline rec-quality eval harness (time-split, NDCG/Pearson)
+│   ├── alembic/             # DB migrations
 │   └── routers/             # movies, ratings, watchlist, recommendations,
 │                            #   rec_feedback, events, analytics
-├── tests/unit/              # pytest suite: dna, scoring, profile builder, analytics math
+├── tests/unit/              # pytest suite: dna, scoring, profile builder, analytics, eval
 ├── frontend/                # Next.js 16 App Router
 │   ├── app/                 # For You (/), Discover (/search), Watchlist, Ratings, Share
 │   ├── components/          # MovieCard, PosterCard, Poster, RatingBadges, MovieModal, …
-│   └── lib/                 # api.ts, tmdb.ts, streaming.ts, ratings.ts, providers.ts
+│   └── lib/                 # api.ts, tmdb.ts, streaming.ts, ratings.ts, providers.ts, watchlistMeta.ts
 ├── Improvement_plans/       # design + QA planning docs
 ├── pytest.ini               # test config (pythonpath, testpaths)
 ├── requirements-dev.txt     # test deps (pytest, pytest-cov)
@@ -127,6 +134,8 @@ movie-night-ai/
 | `GET /movies/discover` | Flexible TMDB browse (genre/year/rating/runtime/provider/people/keyword) |
 | `GET /movies/search`, `/trending`, `/person_search`, `/{id}`, `/{id}/providers` | TMDB proxies |
 | `GET /movies/{id}/ratings`, `GET /movies/ratings?ids=` | IMDb/RT/Metacritic scores (OMDb, cached) — single + batch |
+| `GET /movies/meta?ids=` | Runtime + streaming providers per movie (cached) — powers the watchlist sort/filter |
+| `GET /taste` | Your Taste‑DNA profile — 10 axes + confidence + top genres/people/themes (powers the Taste DNA page) |
 | `GET/POST/DELETE /ratings` | Manage ratings |
 | `GET/POST/PUT/DELETE /watchlist` | Manage the watchlist |
 | `POST/DELETE /rec_feedback` | "Not interested" signal |

@@ -8,7 +8,8 @@ Pure functions — no network, unit-tested in test_scoring.py.
 import hashlib
 from typing import Dict, List, Optional, Tuple
 
-from backend.dna import AXES, dna_distance
+from backend.dna import AXES
+from backend.features import extract_features, apply_model
 
 # ── Score weights (tunable) ──
 W_DNA       = 0.34
@@ -19,6 +20,7 @@ W_THEME     = 0.14
 W_FRESH     = 0.06
 W_DISCOVERY = 0.12
 W_POPPEN    = 0.10
+W_ROTATION  = 0.10   # demote a movie shown in the last few days, in the FINAL ranking (audit Q3)
 
 GENRE_NORM   = 8.0
 PEOPLE_NORM  = 6.0
@@ -37,6 +39,10 @@ CAP_DIRECTOR = 2
 CAP_GENRE = 4
 CAP_DECADE = 2
 
+# Buckets that exist for discovery (not "closest to taste") — gated by a fit-floor (M7)
+DISCOVERY_BUCKETS = {"Hidden Gems", "Underseen Favorites", "Wildcard", "Expand Your Taste"}
+FIT_FLOOR_RATIO = 0.80   # a discovery pick must score ≥80% of the top candidate to reserve a slot
+
 
 def _clamp01(x: float) -> float:
     return max(0.0, min(1.0, x))
@@ -48,57 +54,35 @@ def _jitter(tmdb_id: int, seed: int) -> float:
 
 
 def score_candidate(cand: dict, profile: dict, user_dna: Dict[str, float],
-                    confidence: Dict[str, float], seed: int = 0) -> Tuple[float, dict]:
+                    confidence: Dict[str, float], seed: int = 0,
+                    recently_shown: Optional[set] = None,
+                    model: Optional[dict] = None) -> Tuple[float, dict]:
     """Returns (score, components). cand must carry: dna, themes, genre_ids, genres,
-    vote_average, vote_count, directors([[id,name]]), top_cast([[id,name]]), year."""
+    vote_average, vote_count, directors([[id,name]]), top_cast([[id,name]]), year.
+    If `model` (a learned ranker, S1) is given it sets the weights; else the hand-tuned weights."""
+    feats = extract_features(cand, profile, user_dna, confidence)
+
+    if model is not None:
+        base = apply_model(model, feats)
+    else:
+        # Hand-tuned fallback (thin profiles lean on baseline quality, not noisy affinity).
+        mean_conf = sum(confidence.get(a, 0.0) for a in AXES) / len(AXES)
+        blend = 0.6 + 0.4 * mean_conf
+        personal = (W_DNA * feats["dna_sim"] + W_GENRE * feats["genre_affinity"]
+                    + W_DIRECTOR * feats["director_affinity"] + W_ACTOR * feats["actor_affinity"]
+                    + W_THEME * feats["theme_affinity"])
+        baseline = (W_FRESH * feats["freshness"] + W_DISCOVERY * feats["discovery"]
+                    - W_POPPEN * feats["pop_penalty"])
+        base = blend * personal + baseline
+
+    rotation = W_ROTATION if (recently_shown and cand.get("tmdb_id") in recently_shown) else 0.0
+    score = base - rotation + _jitter(cand.get("tmdb_id", 0), seed)
+
     cdna = cand.get("dna") or {a: 0.0 for a in AXES}
-    dna_sim = 1.0 - dna_distance(user_dna, cdna, confidence)
-
-    gids = set(cand.get("genre_ids", []))
-    loved_g = profile.get("loved_genres", {})
-    disliked_g = set(profile.get("disliked_genres", {}))
-    sum_loved = sum(loved_g.get(g, 0) for g in gids)
-    disliked_hits = sum(1 for g in gids if g in disliked_g)
-    genre_affinity = _clamp01(sum_loved / GENRE_NORM - 0.4 * disliked_hits)
-
-    people = profile.get("people_scores", {})
-    director_ids = [pid for pid, _n in cand.get("directors", [])]
-    cast_ids = [pid for pid, _n in cand.get("top_cast", [])]
-    director_affinity = _clamp01(max([people.get(p, 0) for p in director_ids] or [0]) / PEOPLE_NORM)
-    actor_affinity = _clamp01(sum(people.get(p, 0) for p in cast_ids) / (PEOPLE_NORM + 2))
-
-    top_kw = {k.lower() for k in profile.get("top_keywords", [])}
-    avoid_kw = {k.lower() for k in profile.get("avoid_keywords", [])}
-    cand_terms = {t.lower() for t in (cand.get("themes", []) or [])}
-    cand_terms |= {k.lower() for k in (cand.get("keywords", []) or [])}
-    theme_hits = len(cand_terms & top_kw)
-    avoid_hits = len(cand_terms & avoid_kw)
-    theme_affinity = _clamp01(theme_hits / THEME_NORM - 0.3 * avoid_hits)
-
-    year = cand.get("year")
-    freshness = _clamp01((year - 2000) / 26.0) if isinstance(year, int) else 0.3
-
-    va = cand.get("vote_average", 0.0) or 0.0
-    vc = cand.get("vote_count", 0) or 0
-    discovery = _clamp01((va - 6.0) / 3.0) * _clamp01(1.0 - vc / 5000.0)
-    pop_penalty = _clamp01(vc / 15000.0)
-
-    # Thin profiles trust the personal signal less, lean on baseline quality/discovery.
-    mean_conf = sum(confidence.get(a, 0.0) for a in AXES) / len(AXES)
-    blend = 0.6 + 0.4 * mean_conf
-
-    personal = (W_DNA * dna_sim + W_GENRE * genre_affinity + W_DIRECTOR * director_affinity
-                + W_ACTOR * actor_affinity + W_THEME * theme_affinity)
-    baseline = W_FRESH * freshness + W_DISCOVERY * discovery - W_POPPEN * pop_penalty
-    score = blend * personal + baseline + _jitter(cand.get("tmdb_id", 0), seed)
-
-    comps = {
-        "dna_sim": round(dna_sim, 3), "genre_affinity": round(genre_affinity, 3),
-        "director_affinity": round(director_affinity, 3), "actor_affinity": round(actor_affinity, 3),
-        "theme_affinity": round(theme_affinity, 3), "freshness": round(freshness, 3),
-        "discovery": round(discovery, 3), "pop_penalty": round(pop_penalty, 3),
-        "diff_axes": _diff_axes(user_dna, cdna),
-    }
+    comps = {k: round(feats[k], 3) for k in
+             ("dna_sim", "genre_affinity", "director_affinity", "actor_affinity",
+              "theme_affinity", "freshness", "discovery", "pop_penalty")}
+    comps["diff_axes"] = _diff_axes(user_dna, cdna)
     return score, comps
 
 
@@ -187,14 +171,23 @@ def select_with_buckets_mmr(scored: List[dict], n: int = 12) -> List[dict]:
         chosen_ids.add(c["tmdb_id"])
         selected.append(c)
 
+    # Fit-floor: a discovery-bucket pick must be within FIT_FLOOR_RATIO of the best candidate
+    # to claim a reserved slot — otherwise that slot redistributes to the global best (M7).
+    # Keeps the list score-first instead of forcing in mediocre "gems" to fill a quota.
+    top_score = max((c["score"] for c in scored), default=0.0)
+    floor = FIT_FLOOR_RATIO * top_score if top_score > 0 else float("-inf")
+
     # Pass 1: honor the bucket mix.
     for bucket, want in BUCKET_MIX.items():
+        is_discovery = bucket in DISCOVERY_BUCKETS
         got = 0
         for c in by_bucket.get(bucket, []):
             if got >= want or len(selected) >= n:
                 break
             if c["tmdb_id"] in chosen_ids or violates(c):
                 continue
+            if is_discovery and c["score"] < floor:
+                continue  # too weak to earn a reserved discovery slot
             take(c)
             got += 1
 

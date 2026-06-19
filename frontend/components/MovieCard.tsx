@@ -106,7 +106,7 @@ export default function MovieCard({
           </p>
           <RatingBadges ratings={ratings} style={{ marginBottom: "0.4rem" }} />
           <p style={{
-            color: movie.bodyEmphasis ? "#e4e4e7" : "var(--text-2)",
+            color: movie.bodyEmphasis ? "var(--text-bright)" : "var(--text-2)",
             fontSize: movie.bodyEmphasis ? "var(--font-sm)" : "var(--font-xs)",
             lineHeight: movie.bodyEmphasis ? 1.5 : 1.4,
             marginBottom: "var(--space-3)",

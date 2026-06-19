@@ -9,6 +9,10 @@ from typing import Dict, List, Optional, Tuple
 
 from groq import Groq
 
+# Bump when the axes, the proxy heuristics, or the LLM prompt change — every cached
+# movie_dna row with a different version is treated as stale and recomputed (M6).
+DNA_MODEL_VERSION = "1"
+
 # axis -> (negative pole, positive pole). Order is canonical; keep it stable.
 AXES: List[str] = [
     "pace", "focus", "tone", "mode", "realism",

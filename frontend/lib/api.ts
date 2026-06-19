@@ -61,6 +61,7 @@ export interface TasteInfo {
   people: string[];
   genres: string[];
   dna?: string[];           // top Taste-DNA traits, e.g. ["slow-burn","character-driven","cerebral"]
+  confidence?: number;      // 0..1 — how sure the taste model is (low when cold-starting)
   tone: string;
 }
 
@@ -214,25 +215,21 @@ export const addToWatchlist = (data: {
     body: JSON.stringify(data),
   });
 
-export async function rateAndAddWatched(data: {
+// Rates + marks watched in ONE atomic backend transaction (audit M1) — replaces the
+// previous two sequential calls that could leave a half-updated state on partial failure.
+export const rateAndAddWatched = (data: {
   tmdb_id: number;
   title: string;
   poster_path?: string | null;
   genres?: string[];
   year?: number | null;
   rating: number;
-}) {
-  await upsertRating(data);
-  await addToWatchlist({
-    tmdb_id: data.tmdb_id,
-    title: data.title,
-    poster_path: data.poster_path,
-    genres: data.genres,
-    year: data.year,
-    watched: true,
-    post_watch_rating: data.rating,
+}) =>
+  req<Rating>("/ratings/rate-and-watch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
   });
-}
 
 export const updateWatchlistItem = (
   tmdb_id: number,
@@ -249,7 +246,7 @@ export const removeFromWatchlist = (tmdb_id: number) =>
 
 // Recommendations
 export const getRecommendations = (refresh = 0, genre?: string, mood?: string, providers?: number[]) =>
-  req<{ recommendations: Recommendation[]; message?: string; source?: string; taste?: TasteInfo }>(
+  req<{ recommendations: Recommendation[]; message?: string; source?: string; taste?: TasteInfo; cold_start?: boolean }>(
     `/recommendations?refresh=${refresh}` +
       (genre ? `&genre=${encodeURIComponent(genre)}` : "") +
       (mood ? `&mood=${encodeURIComponent(mood)}` : "") +
@@ -285,3 +282,27 @@ export function logEvent(
     }),
   }).catch(() => {});
 }
+
+// Taste DNA profile (UX18)
+export interface TasteAxis {
+  axis: string;
+  neg: string;
+  pos: string;
+  value: number;       // -1..1
+  confidence: number;  // 0..1
+  lean: string;
+}
+
+export interface TasteProfile {
+  has_profile: boolean;
+  n_ratings: number;
+  mean_confidence: number;
+  axes: TasteAxis[];
+  traits: string[];
+  genres: { name: string; score: number }[];
+  people: { name: string; score: number }[];
+  keywords: string[];
+  updated_at: string | null;
+}
+
+export const getTasteProfile = () => req<TasteProfile>("/taste/");

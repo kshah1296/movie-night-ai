@@ -61,51 +61,65 @@ FastAPI app, run from the **repo root** (the `backend/` folder is a Python packa
 |------|---------|
 | `main.py` | App entry point; loads `.env`, registers routers, sets up CORS |
 | `database.py` | SQLAlchemy engine + `get_db` dependency + `init_db()` |
-| `models.py` | `Rating`, `WatchlistItem`, `MovieFacets` (TMDB keyword/credit cache), `MovieRatingsCache` (OMDb scores, fetch-once + 14-day TTL), `MovieDNA` (10-axis Taste-DNA vector + themes per movie, proxy→llm), `TasteProfile` (aggregated user DNA + affinities, singleton), `RecFeedback` (not_interested + shown), `RecEvent` (impression + click/trailer/share/skip stream for analytics), `TasteAnalysis` (cached LLM taste reading) |
-| `routers/movies.py` | TMDB proxy: `/search`, `/trending`, `/discover` (sort + genre/year/rating/runtime/provider/people/keyword filters), `/person_search`, `/{id}`, `/{id}/providers`, `/{id}/ratings` (OMDb, DB-cached) + **batch** `/ratings?ids=` |
-| `routers/ratings.py` | `GET/POST /ratings`, `DELETE /ratings/{tmdb_id}` |
+| `config.py` | `pydantic-settings` `Settings` (singleton `settings`) — `DATABASE_URL`, `ALLOWED_ORIGINS`, API keys; **required `TMDB_API_KEY` (fails fast at startup)** |
+| `http_client.py` | One app-lifetime pooled `httpx.AsyncClient` (`get_http_client()`); closed in the lifespan shutdown |
+| `database.py` | SQLAlchemy engine (URL from `settings`) + `get_db` + `init_db()` (= `create_all` + `_apply_sqlite_migrations`) |
+| `models.py` | `Rating`, `WatchlistItem`, `MovieFacets` (+`imdb_id`), `MovieRatingsCache` (OMDb, 14-day TTL), `MovieMetaCache` (runtime + streaming providers for the watchlist, 7-day TTL), `MovieDNA` (10-axis vector + themes, proxy→llm, **`model_version`** for invalidation), `TasteProfile` (aggregated user DNA, singleton), `TasteProfileSnapshot` (taste timeline, M8), `LearnedModel` (S1: standardized linear ranker weights + gated eval metrics; ≤1 `active`), `RecFeedback` (not_interested + shown), `RecEvent` (impression + click/trailer/share/skip stream), `TasteAnalysis` (cached LLM taste reading) |
+| `routers/movies.py` | TMDB proxy: `/search`, `/trending`, `/discover`, `/person_search`, `/{id}`, `/{id}/providers`, `/{id}/ratings` (OMDb) + **batch** `/ratings?ids=`, **batch** `/meta?ids=` (runtime + providers) |
+| `routers/ratings.py` | `GET/POST /ratings`, **`POST /ratings/rate-and-watch`** (atomic rate + mark-watched), `DELETE /ratings/{tmdb_id}` |
 | `routers/watchlist.py` | Full CRUD + upsert on POST |
-| `routers/recommendations.py` | V3 Taste-DNA engine — see Key backend details below |
-| `routers/rec_feedback.py` | `GET/POST /rec_feedback` (not_interested only), `DELETE /rec_feedback/{tmdb_id}` (Undo) |
+| `routers/recommendations.py` | V3 Taste-DNA engine — `build_recommendations()` service + thin route. See Key backend details |
+| `routers/rec_feedback.py` | `GET/POST /rec_feedback` (not_interested), `DELETE /rec_feedback/{tmdb_id}` (Undo) |
 | `routers/events.py` | `POST /events` — logs client engagement (click/trailer/share/watchlist_add/remove/skip); `impression` is server-only |
-| `routers/analytics.py` | `GET /analytics?days=N` — CTR, watchlist conversion, acceptance, rating-prediction correlation, novelty, diversity (backend-only, curlable) |
-| `dna.py` | Pure module: 10 Taste-DNA axes, `proxy_dna()` (deterministic), `llm_score_dna()` (Groq), `aggregate_profile_dna()`, `dna_distance()`, `axes_to_words()` |
-| `scoring.py` | Pure module: `score_candidate()` (hybrid formula), `assign_bucket()`, `select_with_buckets_mmr()` (diversity caps). Replaces LLM ranking. Unit-tested in `tests/unit/` |
+| `routers/analytics.py` | `GET /analytics?days=N` (CTR/conversion/acceptance/novelty/diversity), **`/analytics/eval`** (offline rec quality, M5), **`/analytics/taste-history`** (DNA timeline, M8) — backend-only |
+| `routers/taste.py` | **`GET /taste`** — user-facing Taste-DNA profile (10 axes w/ pole labels + per-axis confidence, top genres/people/themes) read from the persisted `taste_profile`. Powers the `/taste` page (UX18) |
+| `dna.py` | Pure module: 10 axes + `DNA_MODEL_VERSION`, `proxy_dna()`, `llm_score_dna()` (Groq), `aggregate_profile_dna()`, `dna_distance()`, `axes_to_words()` |
+| `features.py` | Pure module (S1): `extract_features()` — the ONE candidate→features function, shared by train + serve (zero skew); `apply_model()` (standardized linear); `load_active_model()`. `FEATURE_NAMES` = the 10 model inputs (incl. de-saturated `genre_affinity_norm` ex-M4 + `dna_is_proxy` ex-M3) |
+| `scoring.py` | Pure module: `score_candidate()` (calls `features.extract_features`; weighted by the active **learned model** if one exists, else the hand-tuned `W_*` fallback), `assign_bucket()`, `select_with_buckets_mmr()` (diversity caps + discovery fit-floor). Unit-tested |
+| `train.py` | S1 learned-ranker trainer (run `venv/bin/python -m backend.train`): numpy closed-form **Ridge** over `features.FEATURE_NAMES`, **leave-one-out** training features (profile rebuilt without each movie → no self-leak, mirrors serving), alpha by k-fold CV on train, **gated by `eval.py`** — persists a `LearnedModel` (refit on all ratings) ONLY if it beats the hand-tuned baseline. `--dry-run` to gate without persisting |
+| `eval.py` | **Offline eval harness (M5)** — time-split, NDCG@k + Pearson/Spearman + calibrated RMSE. `python -m backend.eval` or `GET /analytics/eval` |
 
-SQLite DB file (`movie_night.db`) is created at the repo root on first startup; `init_db()` auto-creates any new tables (never ALTERs existing ones).
+DB file (`movie_night.db`) created at repo root on first startup. **`init_db()`** runs `create_all` (new tables) + `_apply_sqlite_migrations()` (idempotent additive `ALTER`s — `imdb_id`, `model_version`). **Alembic is adopted** (`backend/alembic/`, baseline stamped) for structural migrations going forward; run `venv/bin/alembic revision --autogenerate -m "…"` then `alembic upgrade head`.
 
 #### Key backend details
 - **Recommendation engine V3 — Taste DNA** (`routers/recommendations.py` + `dna.py` + `scoring.py`):
   ranking is now **deterministic and reproducible**; the LLM only profiles + writes prose. Pipeline:
   - **Stage 0** facet enrichment (TMDB keywords/directors/cast) cached forever in `movie_facets`, ≤15
     fetches/request; now enriches candidates too (powers the scorer's director/actor affinity + the MMR director cap).
-  - **Stage 1** weighted taste profile (5★=+2 … 1★=−2, watchlist=+1) → loved genres/keywords/people/decade
-    (`_build_profile`, also returns raw `people_scores`).
-  - **Stage 2** Groq taste analysis cached in `taste_analysis` on the ratings fingerprint (retrieval keywords/wildcard/tone).
-  - **Stage 3** multi-channel candidate retrieval (similar/keywords/people/hidden-gem/popular/wildcard),
-    round-robin interleaved to 36. Candidate dicts now carry `genre_ids`, `vote_count`, `popularity`.
+  - **Stage 1** weighted taste profile (`_build_profile`) folds in **all feedback signals**: explicit
+    ratings (5★=+2…1★=−2), **watched watchlist post-ratings** (Q1), watchlist intent (+1), **clicks/trailer
+    views on unrated movies** (engagement, M1: +0.4/+0.7 capped), and **dismissals as negative taste**
+    (Q2: −1.5, most-recent 25, decaying) → loved/disliked genres, keywords, people, decade, `people_scores`.
+  - **Stage 2** Groq taste analysis cached in `taste_analysis` on the rating fingerprint (retrieval keywords/wildcard/tone).
+  - **Stage 3** multi-channel retrieval (similar/keywords/people/hidden-gem/popular/wildcard), round-robin
+    interleaved to **`POOL_SIZE=60`**; **cold-start** (<`COLD_START_MIN=4` signals) injects a trending channel (Q5).
+    Candidate dicts carry `genre_ids`, `vote_count`, `popularity`.
   - **Stage 3.5 Taste DNA** (`_ensure_dna`): every rated movie + candidate gets a 10-axis vector
     (`pace, focus, tone, mode, realism, texture, scale, concept, humor, complexity`, each [-1,1]) — a free
-    deterministic **proxy** (`dna.proxy_dna`) instantly, **LLM-upgraded** ≤`DNA_BATCH_LIMIT=8`/request
-    (rated first), persisted in `movie_dna` (proxy→llm), backlog draining across requests (same pattern as facets).
-    `aggregate_profile_dna` confidence-weights rated-movie vectors into the user DNA → persisted in `taste_profile` (on ratings change).
-  - **Stage 4 deterministic scoring** (`scoring.score_candidate`): hybrid score = 0.34·DNA-similarity +
-    0.16·genre + 0.10·director + 0.08·actor + 0.14·theme + 0.06·freshness + 0.12·discovery − 0.10·popularity,
-    confidence-blended. `assign_bucket` → **Safe Picks / Hidden Gems / Expand Your Taste / Critically
-    Acclaimed / Underseen Favorites / Wildcard**. `select_with_buckets_mmr` serves a fixed mix (3/2/2/2/2/1)
-    with hard diversity caps (**≤2 same director, ≤4 same genre, ≤2 same decade**) — no recommendation tunnels.
-    `anchor` per pick is the **deterministic** nearest loved movie by DNA distance.
-  - **Stage 5 explanations** (`_groq_explain`): one Groq call writes a DNA-aware one-liner per final pick
-    (template fallback `_template_reason_v2` when Groq is down — uses DNA words + anchor).
-  - Params unchanged: `refresh=N`, `genre=Name`, `mood=cozy|mind-bender|date-night|adrenaline`, `providers=8,337`.
-    Response: `taste` strip (now includes `dna` trait words) + per-rec `anchor`/`channel`/`bucket`/`bucket_reason`.
-    Serving logs `shown` (rec_feedback, 3-day rotation/14-day TTL) **and** `impression` rows in `rec_events`
-    (bucket/position/predicted_score/vote_count; 90-day TTL) + persists served picks' DNA. `not_interested`
-    hard-excluded. Falls back to `source: "tmdb"` template reasons when Groq is exhausted (ranking is unaffected — it's deterministic).
+    deterministic **proxy** instantly, **LLM-upgraded** ≤`DNA_BATCH_LIMIT=8`/request (rated first), persisted in
+    `movie_dna` (proxy→llm). Rows whose **`model_version` ≠ `dna.DNA_MODEL_VERSION`** are treated as stale +
+    recomputed (M6 — bump the constant to invalidate). `aggregate_profile_dna` confidence-weights the signals
+    into the user DNA (dismissals/engagement included) → `taste_profile` + a `taste_profile_snapshots` timeline row (M8).
+  - **Stage 4 deterministic scoring** (`scoring.score_candidate` via `features.extract_features`): if a
+    `LearnedModel` is **active** (S1), the score is its standardized-linear combination of the 10 features —
+    weights *learned from your ratings*, which fixed the hand-tuned signs (offline Pearson −0.15→+0.23). With no
+    active model it falls back to the hand-tuned hybrid (0.34·DNA-sim + 0.16·genre + 0.10·director + 0.08·actor +
+    0.14·theme + 0.06·freshness + 0.12·discovery − 0.10·popularity), confidence-blended. Either way: −0.10·rotation
+    (recently-shown), seeded jitter, then `assign_bucket` → **Safe Picks / Hidden Gems / Expand Your Taste /
+    Critically Acclaimed / Underseen Favorites / Wildcard**. `select_with_buckets_mmr` is **score-first** with a
+    target mix but a **discovery fit-floor** (M7 — a niche pick must score ≥80% of the top pick to claim a
+    reserved slot) + hard caps (**≤2 director, ≤4 genre, ≤2 decade**). `anchor` = deterministic nearest loved movie by DNA.
+  - **Stage 5 explanations** (`_groq_explain`): one Groq call per final pick; template fallback `_template_reason_v2`.
+  - Params: `refresh=N`, `genre=Name`, `mood=…`, `providers=…`. Response: `taste` strip (`dna` traits +
+    `confidence`), per-rec `anchor`/`channel`/`bucket`/`bucket_reason`, and a `cold_start` flag + message (Q5).
+    The **response cache busts on any ratings/watchlist/dismissal change** (Q6 state fingerprint). Serving logs
+    `shown` (rec_feedback rotation) **and** `impression` rows (rec_events) + persists served DNA. `not_interested`
+    hard-excluded. Falls back to `source:"tmdb"` template reasons when Groq is exhausted (ranking unaffected — deterministic).
 - **Movies** (`routers/movies.py`): `/discover` is the flexible proxy (`sort_by`, `genres`, `year_gte/lte`, `min_rating`, `runtime_gte/lte`, `providers`, `people`, `keywords` — commas converted to TMDB pipe-OR). `/person_search`, `/{id}/providers`, `/{id}/ratings`, **and the batch `/ratings`** MUST be declared before `/{tmdb_id}` (route shadowing — `/movies/ratings` would otherwise be captured by the int path param). `GET /movies/{id}` uses `append_to_response=credits,videos`.
 - **External ratings (OMDb)** (`routers/movies.py`): `/{id}/ratings` and batch `/ratings?ids=` return IMDb/RT/Metacritic, DB-cached in `movie_ratings_cache` (fetch-once, 14-day TTL; cap 30 ids/request, concurrency 5). Returns `{}` gracefully when `OMDB_API_KEY` is unset. The frontend `lib/ratings.ts` `useCardRatings()` hook batch-loads per grid page; `RatingBadges` renders them on every card + the modal.
 - **Analytics** (`routers/events.py` + `routers/analytics.py`): `rec_events` is the impression + engagement stream. The engine logs `impression` rows on serve; the frontend `lib/api.ts` `logEvent()` (fire-and-forget) logs `click`/`trailer`/`share`/`watchlist_add`/`skip`. `GET /analytics` derives CTR, watchlist conversion, acceptance, rating-prediction Pearson r (predicted_score vs actual rating), novelty, and DNA-distance diversity. Backend-only.
-- **Watchlist** (`routers/watchlist.py`): POST is an upsert. PUT uses `update.model_fields_set` to detect explicit `null` for `post_watch_rating` (allows clearing a rating), vs the field simply being omitted.
+- **Watchlist** (`routers/watchlist.py`): POST is an upsert. PUT uses `update.model_fields_set` to detect explicit `null` for `post_watch_rating` (clear a rating) vs the field omitted. `GET /watchlist` takes `limit`/`offset`.
+- **Watchlist "find a movie tonight"** (`movies.py` `/meta?ids=` + `lib/watchlistMeta.ts`): batch endpoint returns `{id: {runtime, providers[]}}` (one TMDB `append_to_response=watch/providers` call/movie, cached in `movie_meta_cache`, 7-day TTL since availability drifts). MUST be declared before `/{tmdb_id}` (route shadowing). The watchlist page uses it for **sort** (added/oldest/shortest/highest-rated/year/title), the **"📺 On my services"** streaming filter (shares the For You service set via `lib/streaming`), **runtime** chips, per-card provider badges + runtime, and a **🎲 Surprise me** random pick.
 - **Python 3.9**: always `Optional[X]` / `List[X]` / `Dict[K, V]` from `typing` — **never `X | None`** (this has crashed the server before).
 
 ### Frontend (`frontend/`)
@@ -115,13 +129,15 @@ Next.js 16 App Router. All pages are client components (`"use client"`).
 |------|---------|
 | `app/page.tsx` | For You — Taste-DNA recs with mood pills + genre chips, "Your taste" strip (DNA traits + genres/people/keywords), **per-card bucket tag**, per-card Not Interested ✕ with Undo, streaming-only toggle, mode-aware header. Logs `click`/`watchlist_add`/`skip` events |
 | `app/search/page.tsx` | Discover — **poster-forward grid** (`PosterCard`), sort selector + filter drawer (genres/decade/rating/runtime/providers), text search, person pivot, infinite scroll, URL-as-state (`useSearchParams` in `<Suspense>`) |
-| `app/watchlist/page.tsx` | Up Next / Watched tabs, genre chips, mark watched, post-watch rating, remove with Undo |
+| `app/watchlist/page.tsx` | Up Next / Watched tabs, **sort** (added/oldest/shortest/rating/year/title), **📺 streaming filter** + service picker, **runtime** chips, provider badges + runtime on cards, **🎲 Surprise me**, genre chips, mark watched, post-watch rating, remove with Undo |
 | `app/ratings/page.tsx` | Grid of all rated movies — edit or remove ratings |
+| `app/taste/page.tsx` | **Taste DNA** (UX18) — SVG radar of the 10 bipolar axes (center=neg pole, edge=pos pole, dashed mid-ring=neutral, dot size=confidence) + per-axis diverging bars + top genres/people/themes. Reads `GET /taste` |
 | `app/share/page.tsx` | Read-only public watchlist view — static border tiles (no hover effect) |
 | `lib/api.ts` | All fetch calls to FastAPI (`cache: "no-store"` globally). Includes `getMovieRatingsBatch()` and `logEvent()` (fire-and-forget analytics) |
 | `lib/tmdb.ts` | `posterUrl()`, `genreIdsToNames()`, `GENRE_MAP` |
-| `lib/streaming.ts` | `STREAMING_PROVIDERS` (8 TMDB US provider ids) + localStorage persistence for the streaming-only toggle |
+| `lib/streaming.ts` | `STREAMING_PROVIDERS` (8 TMDB US provider ids) + localStorage persistence for the shared "my services" set (For You + Watchlist) |
 | `lib/ratings.ts` | `useCardRatings()` hook (session-cached, batched, deduped external-score loader) + `rtIsFresh()` |
+| `lib/watchlistMeta.ts` | `useWatchMeta()` hook — batched runtime + streaming-provider loader for the watchlist (mirrors `useCardRatings`) |
 | `lib/providers.ts` | `providerLink(providerId, title, fallback)` — best-effort deep links to each streaming/store service (opens the service searched for the title; falls back to the JustWatch page) |
 | `components/MovieCard.tsx` | For-You card (horizontal) — `Poster` + ratings badges, AI explanation, `kicker` ("Inspired by X"), `bucket` tag, `onDismiss` (Not Interested ✕) |
 | `components/PosterCard.tsx` | Discover card (poster-forward) — full-bleed poster + title/meta + ratings badges + inline rate/watchlist |
@@ -132,7 +148,7 @@ Next.js 16 App Router. All pages are client components (`"use client"`).
 | `components/Toast.tsx` | Slide-up/slide-down toast; supports `actionLabel`/`onAction` for Undo |
 | `components/SkeletonCard.tsx` | Shimmer skeleton + `SkeletonGrid({ variant: "row" | "poster" })` (Discover uses `poster`) |
 | `components/PageHeader.tsx` / `EmptyState.tsx` | Shared page header (solid title) + empty/error state |
-| `components/Nav.tsx` | Sticky nav (For You / Discover / Watchlist / My Ratings) with mobile media query |
+| `components/Nav.tsx` | Sticky nav (For You / Discover / Watchlist / My Ratings / Taste DNA) with mobile media query |
 
 ### Styling
 Tailwind v4 — configured via `@import "tailwindcss"` and `@theme` in `globals.css` (no `tailwind.config.js`). All custom styles are in `globals.css`.
@@ -200,17 +216,18 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 - **For You page**: V3 Taste-DNA recs sorted into 6 buckets (per-card **bucket tag**), deterministic "Inspired by X" anchors, 4 mood pills + 12-genre chips, "What we've learned" taste strip (**DNA traits** + genres/people/keywords), external score badges, per-card Not Interested ✕ with Undo, 📺 streaming-only toggle, inline refresh, mode-aware header, first-run onboarding, honest fallback note when the LLM explainer is down
 - **Discover page**: **Poster-forward grid** (~4–5/row), sort selector + filter drawer (multi-genre AND, decade, min rating, runtime, 8 streaming providers), text search with debounce + person pivot, infinite scroll (race-guarded), active filter chips, URL-as-state shareable filters
 - **Every card**: IMDb / 🍅 Rotten Tomatoes / Metacritic badges (OMDb, batch-loaded + cached)
-- **Watchlist page**: Up Next / Watched tabs, genre chips, mark watched/unwatch, post-watch rating (clearable), remove with Undo, "🔗 Share list", modal on card click
+- **Watchlist page**: Up Next / Watched tabs + a "find a movie tonight" toolkit — sort (recently added / oldest / shortest runtime / highest rated / newest / title), 📺 streaming filter ("on my services") with provider badges + runtime on each card, runtime chips, 🎲 Surprise-me random pick, genre chips, mark watched/unwatch, post-watch rating, remove with Undo, "🔗 Share list", modal on card click
 - **Ratings page**: Grid of all rated movies, edit rating in place, remove
+- **Taste DNA page** (`/taste`, UX18): visualizes the learned taste profile — an SVG radar of the 10 bipolar axes (dot size = per-axis confidence, dashed mid-ring = neutral) + a precise per-axis diverging-bar breakdown + top genres/people/themes. Read-only; refreshed whenever For You rebuilds the profile
 - **Movie modal**: Backdrop, poster, cast, score badges (TMDB/IMDb/RT/MC), **clickable streaming providers** (deep-link to the service searched for the title), trailer link, rate/watchlist, focus trap (focuses the dialog)
 - **Share page**: Read-only watchlist split into Up Next / Already Watched
 - **Analytics**: every served rec logs an impression + predicted score; `GET /analytics` reports CTR, conversion, acceptance, prediction accuracy, novelty, diversity
 
-### Testing
-- Unit suite lives in **`tests/unit/`** (`test_dna.py`, `test_scoring.py`, `test_recommendations.py`, `test_analytics.py`) — deterministic, no network (the one Groq call is monkeypatched). Config in `pytest.ini` (`pythonpath = .`, `testpaths = tests/unit`).
-- Run from repo root: `venv/bin/pytest` · coverage: `venv/bin/pytest --cov=backend --cov-report=term-missing`.
-- Dev deps in `requirements-dev.txt` (`venv/bin/pip install -r requirements-dev.txt`).
-- Covers the pure logic (Taste-DNA math, hybrid scorer, bucketing + MMR caps, profile builder, analytics math). Router endpoints (DB/HTTP) would need a separate integration suite.
+### Testing & evaluation
+- Unit suite in **`tests/unit/`** (`test_dna.py`, `test_scoring.py`, `test_recommendations.py`, `test_analytics.py`, `test_eval.py`, `test_features.py`) — deterministic, no network (Groq monkeypatched). Config in `pytest.ini`. Run `venv/bin/pytest`; dev deps in `requirements-dev.txt`. Frontend: `cd frontend && npm test` (Vitest).
+- **Offline eval gate** (`backend/eval.py`, run `venv/bin/python -m backend.eval`): time-split ratings → Pearson/Spearman/NDCG@k/calibrated-RMSE. This is the **acceptance test for any ranking change** — and what `train.py` uses to decide whether a learned model ships.
+- **Offline rec eval (`backend/eval.py`, M5)** — `venv/bin/python -m backend.eval` or `GET /analytics/eval`. Time-splits ratings, scores held-out movies, reports NDCG@k + Pearson/Spearman + RMSE. **This gates rec changes** — run before/after, keep only if metrics improve. It has already gated out three hand-tuning attempts (M4, Q4, M3).
+- **Known limitation it surfaced:** the hand-tuned scorer is ~random/anti-correlated with held-out ratings — the *feature signs are wrong*, which per-term tweaks can't fix. The real fix is a **learned ranker (S1)**. See `Improvement_plans/2026-06-17-RECOMMENDATION-REVIEW-BOARD.md` and `2026-06-19-LOW-CONFIDENCE-RESEARCH.md`. **Do not ship per-term scorer tweaks without an eval win.**
 
 ## Design & QA history (see `Improvement_plans/`)
 
@@ -220,8 +237,11 @@ The app went through three documented passes; the planning docs are committed fo
 - **`QA-FINDINGS.md`** — three-persona QA simulation (first-timer / power-user / mobile+a11y),
   44 findings with a Resolution log at the bottom marking what's fixed vs. consciously deferred.
 - Engine docs: `RECOMMENDATION-ENGINE-REBUILD.md`, `RECOMMENDATION-QUALITY-V2.md`, `SEARCH-PAGE-REBUILD.md`.
-- **`2026-06-16-UI-UX-POLISH-PASS.md`** — token scales (shadow/radius/type/spacing), `Poster`/`RatingBadges`
-  primitives, card elevation, solid page titles, poster-forward Discover, bucket tags.
+- **`2026-06-16-UI-UX-POLISH-PASS.md`** — token scales, `Poster`/`RatingBadges` primitives, poster-forward Discover.
+- **`2026-06-16-PRINCIPAL-ENGINEER-AUDIT.md`** — independent prod-readiness audit (the C-tier launch blockers).
+- **`2026-06-17-RECOMMENDATION-REVIEW-BOARD.md`** — 4 independent reviewers + VP synthesis of the rec engine.
+- **`2026-06-19-LOW-CONFIDENCE-RESEARCH.md`** — evidence that per-term scorer tweaks don't help; promote S1.
+- **Live backlog: `to-do.md` (repo root)** — an Obsidian-Kanban board of all open work, priority-ordered.
 
 **Accessibility baseline (from the QA pass):** 44px touch targets on coarse pointers, dialog focus
 trap, `aria-pressed` on toggles, `aria-current` on nav, `role="status"` toasts, `prefers-reduced-motion`
@@ -233,5 +253,7 @@ support, `.sr-only` loading labels, WCAG-contrast text via `--text-3`. Keep thes
 
 - **Groq free tier = 100K tokens/day**, shared across Taste-DNA scoring (≤8 movies/request), taste analysis, and explanations. **Ranking is deterministic so it never degrades** — only DNA enrichment and prose pause when exhausted (`source: "tmdb"`, template reasons, anchors still work). The DNA backlog (proxy→llm) drains across requests as tokens allow. Check usage at console.groq.com.
 - **DNA is eventually-consistent**: a fresh profile starts on deterministic proxy vectors (genre-driven) and sharpens as movies get LLM-scored over subsequent requests. Candidate director/actor affinity + the MMR director cap only bind once a candidate's facets are cached (genre/decade caps always bind).
-- **Single-profile**: ratings are global (no auth). `TasteProfile.user_id` defaults to `"local"` to future-proof multi-user.
-- **Deferred (tracked in `QA-FINDINGS.md`):** decoupling rate-from-watched, a "Not interested" management view + exclusion decay, a multi-item undo queue, an in-app analytics dashboard, LLM movie clustering.
+- **Single-profile**: ratings are global (no auth). `TasteProfile.user_id` defaults to `"local"` to future-proof multi-user. Multi-user + Postgres + auth/rate-limiting are the **launch-gating C-tier** (audit) — required before any public deploy.
+- **Scorer quality**: the ranker is now the **learned model (S1)** — `train.py` fit standardized-linear weights that beat the hand-tuned baseline on the eval (Pearson −0.15→+0.23, Spearman −0.24→+0.23, NDCG +0.025) and is the active model. The hand-tuned weights stay as the fallback. **Retrain (`venv/bin/python -m backend.train`) as ratings accumulate** — it only ships a new model if it still beats the gate. `eval.py`'s `vote_average`/`vote_count` are held at neutral constants, so `discovery`/`pop_penalty` have ~0 learned weight; they still vary (and matter) at serve time.
+- **Config/infra**: `settings` (pydantic-settings) drives `DATABASE_URL`/`ALLOWED_ORIGINS`; one pooled `httpx` client; `lifespan` (not `on_event`); logging via the `logging` module. Alembic for migrations.
+- **Deferred (see `to-do.md`):** embedding/ANN retrieval (S2) + principled exploration / bandits (S4); a "Not interested" management view; retention features (weekly digest, streaming alerts, Taste Profile page, group mode).

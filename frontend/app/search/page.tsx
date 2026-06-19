@@ -20,6 +20,7 @@ import {
 } from "@/lib/api";
 import { genreIdsToNames, GENRE_MAP } from "@/lib/tmdb";
 import { useCardRatings } from "@/lib/ratings";
+import { STREAMING_PROVIDERS } from "@/lib/streaming";
 import PosterCard from "@/components/PosterCard";
 import MovieModal from "@/components/MovieModal";
 import Toast from "@/components/Toast";
@@ -53,17 +54,8 @@ const RUNTIMES: { key: string; label: string; gte?: number; lte?: number }[] = [
   { key: "long", label: "2h+", gte: 120 },
 ];
 
-// TMDB US watch-provider ids
-const PROVIDERS = [
-  { id: 8, label: "Netflix" },
-  { id: 9, label: "Prime Video" },
-  { id: 337, label: "Disney+" },
-  { id: 15, label: "Hulu" },
-  { id: 1899, label: "Max" },
-  { id: 350, label: "Apple TV+" },
-  { id: 531, label: "Paramount+" },
-  { id: 386, label: "Peacock" },
-];
+// Single source of truth for the provider list (audit M3).
+const PROVIDERS = STREAMING_PROVIDERS;
 
 const GENRES = Object.entries(GENRE_MAP)
   .map(([id, name]) => ({ id: Number(id), name }))

@@ -10,6 +10,7 @@
   --border: #27272a;
   --border-strong: #3f3f46;
   --text-1: #fafafa;
+  --text-bright: #e4e4e7; /* long-form reading tone — softer than --text-1, brighter than --text-2 */
   --text-2: #a1a1aa;
   --text-3: #8b8b96; /* tertiary floor — ≥5:1 on --bg (replaces #71717a/#52525b in running text) */
   --surface-3: #2e2e35; /* hover fill for surfaces */
@@ -409,6 +410,11 @@ body::before {
 /* On narrow screens, stack the filter label above its chip group (P3-10) */
 @media (max-width: 520px) {
   .filter-label { width: 100%; margin-bottom: 0.15rem; }
+}
+
+/* Taste DNA page: radar + breakdown stack on narrow screens */
+@media (max-width: 760px) {
+  .taste-grid { grid-template-columns: 1fr !important; }
 }
 
 /* Dark pill-shaped sort selector to sit beside .tab buttons */

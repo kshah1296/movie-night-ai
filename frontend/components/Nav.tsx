@@ -8,6 +8,7 @@ const links = [
   { href: "/search", label: "Discover" },
   { href: "/watchlist", label: "Watchlist" },
   { href: "/ratings", label: "My Ratings" },
+  { href: "/taste", label: "Taste DNA" },
 ];
 
 export default function Nav() {

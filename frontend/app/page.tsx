@@ -40,6 +40,7 @@ export default function HomePage() {
   const [taste, setTaste] = useState<TasteInfo | null>(null);
   const [source, setSource] = useState("");
   const [message, setMessage] = useState("");
+  const [coldStart, setColdStart] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -68,6 +69,7 @@ export default function HomePage() {
         setRecs(data.recommendations);
         setSource(data.source ?? "");
         setMessage(data.message ?? "");
+        setColdStart(data.cold_start ?? false);
         if (data.taste) setTaste(data.taste);
       })
       .catch(() => setError("Could not load recommendations. Is the backend running?"))
@@ -381,8 +383,19 @@ export default function HomePage() {
         }
       />
 
+      {/* Cold-start: be honest that we're still learning, and nudge more ratings (Q5) */}
+      {coldStart && message && (
+        <p style={{
+          color: "var(--text-1)", fontSize: "0.82rem", marginTop: "-0.5rem", marginBottom: "0.85rem",
+          background: "var(--accent-soft)", border: "1px solid var(--accent)", borderRadius: "var(--radius-sm)",
+          padding: "0.5rem 0.75rem",
+        }}>
+          🌱 {message}
+        </p>
+      )}
+
       {/* Honest note when the LLM ranker is unavailable (quota) and we fell back (P2-1) */}
-      {isFallback && (
+      {isFallback && !coldStart && (
         <p style={{ color: "var(--text-2)", fontSize: "0.78rem", marginTop: "-0.5rem", marginBottom: "0.85rem" }}>
           ✨ AI ranking is resting right now — these are taste-matched by similarity instead.
         </p>

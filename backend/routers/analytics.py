@@ -31,6 +31,35 @@ def _rate(num: int, den: int) -> Optional[float]:
     return round(num / den, 3) if den else None
 
 
+@router.get("/taste-history")
+def taste_history(limit: int = Query(60, ge=1, le=200), db: Session = Depends(get_db)):
+    """Taste-DNA evolution over time (M8) — oldest → newest snapshots."""
+    from backend.models import TasteProfileSnapshot
+    rows = (db.query(TasteProfileSnapshot)
+            .filter(TasteProfileSnapshot.user_id == "local")
+            .order_by(TasteProfileSnapshot.created_at.desc()).limit(limit).all())
+    out = []
+    for s in reversed(rows):  # chronological
+        try:
+            dna = json.loads(s.dna or "{}")
+        except Exception:
+            dna = {}
+        out.append({"at": s.created_at.isoformat() if s.created_at else None, "dna": dna})
+    return {"count": len(out), "snapshots": out}
+
+
+@router.get("/eval")
+def offline_eval(
+    test_frac: float = Query(0.3, ge=0.05, le=0.6),
+    k: int = Query(12, ge=1, le=50),
+    db: Session = Depends(get_db),
+):
+    """Offline recommender quality (M5) — time-split eval of the deterministic scorer.
+    Lazy import keeps the heavy engine module off the analytics import path."""
+    from backend.eval import run_eval
+    return run_eval(db, test_frac=test_frac, k=k)
+
+
 @router.get("/")
 def analytics(days: int = Query(30, ge=1, le=365), db: Session = Depends(get_db)):
     since = datetime.utcnow() - timedelta(days=days)

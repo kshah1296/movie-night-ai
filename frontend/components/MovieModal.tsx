@@ -260,7 +260,7 @@ export default function MovieModal({
               </p>
             )}
 
-            <p style={{ color: "#d4d4d8", fontSize: "0.875rem", lineHeight: 1.7, marginTop: "0.75rem" }}>
+            <p style={{ color: "var(--text-bright)", fontSize: "0.875rem", lineHeight: 1.7, marginTop: "0.75rem" }}>
               {movie.overview}
             </p>
 

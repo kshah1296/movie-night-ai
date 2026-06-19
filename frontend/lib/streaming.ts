@@ -1,6 +1,5 @@
-// Streaming-service preferences, persisted in localStorage and shared by the
-// For You page (streaming-only toggle) and the Roulette page.
-// Provider ids match TMDB's US watch-provider ids (same list as the Discover page).
+// Streaming-service preferences, persisted in localStorage. Single source of truth for the
+// US TMDB watch-provider list — also imported by the Discover page (audit M3).
 
 export const STREAMING_PROVIDERS = [
   { id: 8, label: "Netflix" },

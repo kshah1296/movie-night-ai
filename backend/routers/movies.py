@@ -1,4 +1,6 @@
 import asyncio
+import json
+import logging
 import os
 from datetime import date, datetime, timedelta
 from typing import Optional
@@ -8,9 +10,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.models import MovieRatingsCache
+from backend.http_client import get_http_client
+from backend.models import MovieFacets, MovieMetaCache, MovieRatingsCache
 
 router = APIRouter()
+logger = logging.getLogger("movienight.movies")
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 OMDB_BASE_URL = "https://www.omdbapi.com/"
@@ -19,6 +23,10 @@ OMDB_BASE_URL = "https://www.omdbapi.com/"
 RATINGS_TTL = timedelta(days=14)
 RATINGS_BATCH_MAX = 30   # hard cap on ids per batch request
 RATINGS_CONCURRENCY = 5  # max simultaneous OMDb fetches
+
+# Watchlist meta (runtime + streaming providers) — providers drift, so a shorter TTL.
+META_TTL = timedelta(days=7)
+META_BATCH_MAX = 80
 
 ALLOWED_SORTS = {
     "popularity.desc",
@@ -36,12 +44,12 @@ def tmdb_key():
 
 
 async def _tmdb_get(path: str, params: dict) -> dict:
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            f"{TMDB_BASE_URL}{path}",
-            params={"api_key": tmdb_key(), **params},
-            timeout=10,
-        )
+    client = get_http_client()  # shared pooled client (audit H2)
+    resp = await client.get(
+        f"{TMDB_BASE_URL}{path}",
+        params={"api_key": tmdb_key(), **params},
+        timeout=10,
+    )
     resp.raise_for_status()
     return resp.json()
 
@@ -163,27 +171,31 @@ def _upsert_ratings(db: Session, tmdb_id: int, data: dict) -> None:
     row.fetched_at = datetime.utcnow()
 
 
-async def _fetch_omdb_ratings(tmdb_id: int, omdb_key: str) -> Optional[dict]:
+async def _fetch_omdb_ratings(tmdb_id: int, omdb_key: str,
+                              imdb_id: Optional[str] = None) -> Optional[dict]:
     """Fetch external scores from OMDb. Returns a dict (possibly empty values) on a
-    successful response, or None on a transient/unfetchable failure (don't cache None)."""
+    successful response, or None on a transient/unfetchable failure (don't cache None).
+    `imdb_id` may be supplied from the movie_facets cache to skip a TMDB round-trip (audit H3)."""
     def clean(v):
         return v if v not in (None, "", "N/A") else None
 
-    try:
-        detail = await _tmdb_get(f"/movie/{tmdb_id}", {})
-    except Exception:
-        return None
-    imdb_id = detail.get("imdb_id")
+    if not imdb_id:  # cache miss — resolve the IMDb id from TMDB
+        try:
+            detail = await _tmdb_get(f"/movie/{tmdb_id}", {})
+        except httpx.HTTPError as e:
+            logger.warning("TMDB lookup for imdb_id failed (tmdb_id=%s): %s", tmdb_id, e)
+            return None
+        imdb_id = detail.get("imdb_id")
     if not imdb_id:
         return {f: None for f in _RATING_FIELDS}  # permanent: no IMDb id → cacheable empty
 
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                OMDB_BASE_URL, params={"i": imdb_id, "apikey": omdb_key}, timeout=10
-            )
+        resp = await get_http_client().get(
+            OMDB_BASE_URL, params={"i": imdb_id, "apikey": omdb_key}, timeout=10
+        )
         data = resp.json() if resp.status_code == 200 else None
-    except Exception:
+    except httpx.HTTPError as e:
+        logger.warning("OMDb request failed (imdb_id=%s): %s", imdb_id, e)
         return None
 
     if not data or data.get("Response") == "False":
@@ -228,11 +240,17 @@ async def get_movie_ratings_batch(
 
     omdb_key = os.getenv("OMDB_API_KEY")
     if omdb_key and misses:
+        # Pull any cached IMDb ids in one query so OMDb fetches skip the per-movie TMDB call.
+        imdb_ids = {
+            row.tmdb_id: row.imdb_id
+            for row in db.query(MovieFacets.tmdb_id, MovieFacets.imdb_id)
+            .filter(MovieFacets.tmdb_id.in_(misses)).all()
+        }
         sem = asyncio.Semaphore(RATINGS_CONCURRENCY)
 
         async def fetch_one(tid: int):
             async with sem:
-                return tid, await _fetch_omdb_ratings(tid, omdb_key)
+                return tid, await _fetch_omdb_ratings(tid, omdb_key, imdb_ids.get(tid))
 
         # Fetch concurrently, then write sequentially (single Session is not concurrency-safe).
         for tid, data in await asyncio.gather(*(fetch_one(t) for t in misses)):
@@ -251,6 +269,66 @@ async def get_movie_ratings_batch(
     return result
 
 
+# Batch runtime + US streaming providers for the watchlist sort/filter. MUST be declared
+# before /{tmdb_id} (the literal "meta" segment would otherwise hit the int path param).
+@router.get("/meta")
+async def get_movie_meta_batch(
+    ids: str = Query(..., description="Comma-separated TMDB movie ids"),
+    db: Session = Depends(get_db),
+):
+    id_list, seen = [], set()
+    for part in ids.split(","):
+        part = part.strip()
+        if part.isdigit() and int(part) not in seen:
+            seen.add(int(part))
+            id_list.append(int(part))
+    id_list = id_list[:META_BATCH_MAX]
+
+    result: dict = {}
+    misses = []
+    now = datetime.utcnow()
+    for tid in id_list:
+        row = db.get(MovieMetaCache, tid)
+        if row is not None and row.fetched_at and (now - row.fetched_at) < META_TTL:
+            result[str(tid)] = {"runtime": row.runtime,
+                                "providers": json.loads(row.provider_ids or "[]")}
+        else:
+            misses.append(tid)
+
+    if misses:
+        sem = asyncio.Semaphore(RATINGS_CONCURRENCY)
+
+        async def fetch_one(tid: int):
+            async with sem:
+                try:
+                    return tid, await _tmdb_get(f"/movie/{tid}", {"append_to_response": "watch/providers"})
+                except httpx.HTTPError as e:
+                    logger.warning("TMDB meta fetch failed (tmdb_id=%s): %s", tid, e)
+                    return tid, None
+
+        for tid, data in await asyncio.gather(*(fetch_one(t) for t in misses)):
+            if not data or not data.get("id"):
+                row = db.get(MovieMetaCache, tid)  # serve stale on a transient failure
+                result[str(tid)] = ({"runtime": row.runtime,
+                                     "providers": json.loads(row.provider_ids or "[]")}
+                                    if row else {"runtime": None, "providers": []})
+                continue
+            runtime = data.get("runtime")
+            us = (data.get("watch/providers", {}) or {}).get("results", {}).get("US", {})
+            prov_ids = [p["provider_id"] for p in us.get("flatrate", []) if p.get("provider_id")]
+            result[str(tid)] = {"runtime": runtime, "providers": prov_ids}
+            existing = db.get(MovieMetaCache, tid)
+            if existing is None:
+                existing = MovieMetaCache(tmdb_id=tid)
+                db.add(existing)
+            existing.runtime = runtime
+            existing.provider_ids = json.dumps(prov_ids)
+            existing.fetched_at = now
+        db.commit()
+
+    return result
+
+
 # Must be defined BEFORE /{tmdb_id} to avoid route shadowing.
 # External critic/audience scores via OMDb (IMDb + Rotten Tomatoes + Metacritic).
 # Degrades gracefully to {} when OMDB_API_KEY is unset or the movie has no IMDb id.
@@ -264,7 +342,8 @@ async def get_movie_ratings(tmdb_id: int, db: Session = Depends(get_db)):
     if not omdb_key:
         return _row_to_dict(row) if row else {}
 
-    data = await _fetch_omdb_ratings(tmdb_id, omdb_key)
+    facet = db.get(MovieFacets, tmdb_id)  # cached IMDb id skips a TMDB round-trip (audit H3)
+    data = await _fetch_omdb_ratings(tmdb_id, omdb_key, facet.imdb_id if facet else None)
     if data is None:
         return _row_to_dict(row) if row else {}  # serve stale on transient failure
 

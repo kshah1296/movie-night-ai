@@ -9,13 +9,21 @@ import PageHeader from "@/components/PageHeader";
 export default function SharePage() {
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
-    getWatchlist().then(setItems).finally(() => setLoading(false));
+    getWatchlist()
+      .then(setItems)
+      .catch(() => setError(true))   // audit L6 — don't leave a silent empty page
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) {
     return <div style={{ textAlign: "center", paddingTop: "6rem", color: "var(--text-3)" }}>Loading…</div>;
+  }
+
+  if (error) {
+    return <div style={{ textAlign: "center", paddingTop: "6rem", color: "var(--danger)" }}>Couldn&apos;t load this list. Please try again later.</div>;
   }
 
   const watched = items.filter((i) => i.watched);
@@ -108,7 +116,7 @@ function MovieTile({ item, dimmed, index = 0 }: { item: WatchlistItem; dimmed?: 
             style={{ color: "var(--gold)", fontSize: "var(--font-xs)" }}
             aria-label={`Rated ${item.post_watch_rating} out of 5`}
           >
-            <span aria-hidden="true">{"★".repeat(item.post_watch_rating)}</span>
+            <span aria-hidden="true">{"★".repeat(Math.max(0, Math.min(5, Math.round(item.post_watch_rating))))}</span>
           </p>
         ) : null}
       </div>
