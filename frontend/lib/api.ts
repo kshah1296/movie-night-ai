@@ -264,6 +264,16 @@ export const sendRecFeedback = (data: { tmdb_id: number; title?: string }) =>
 export const undoRecFeedback = (tmdb_id: number) =>
   req<{ message: string }>(`/rec_feedback/${tmdb_id}`, { method: "DELETE" });
 
+export interface DismissedItem {
+  id: number;
+  tmdb_id: number;
+  title: string | null;
+  action: string;
+  created_at: string | null;
+}
+
+export const getDismissed = () => req<DismissedItem[]>("/rec_feedback/");
+
 // Implicit-feedback events that power /analytics. Fire-and-forget — never blocks the
 // UI and never throws (analytics is best-effort).
 export type RecEventType =

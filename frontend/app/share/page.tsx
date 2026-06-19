@@ -5,8 +5,10 @@ import Image from "next/image";
 import { getWatchlist, type WatchlistItem } from "@/lib/api";
 import { posterUrl } from "@/lib/tmdb";
 import PageHeader from "@/components/PageHeader";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 
 export default function SharePage() {
+  useDocumentTitle("Shared Watchlist");
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);

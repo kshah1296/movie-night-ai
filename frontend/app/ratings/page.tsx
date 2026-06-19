@@ -7,16 +7,18 @@ import StarRating from "@/components/StarRating";
 import Poster from "@/components/Poster";
 import RatingBadges from "@/components/RatingBadges";
 import { useCardRatings } from "@/lib/ratings";
-import Toast from "@/components/Toast";
+import { useToast } from "@/components/ToastProvider";
 import { SkeletonGrid } from "@/components/SkeletonCard";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 
 export default function RatingsPage() {
+  useDocumentTitle("My Ratings");
   const [ratings, setRatings] = useState<Rating[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [toast, setToast] = useState("");
+  const push = useToast();
 
   useEffect(() => {
     getRatings()
@@ -30,10 +32,10 @@ export default function RatingsPage() {
 
     if (newRating === 0) {
       setRatings((prev) => prev.filter((x) => x.tmdb_id !== r.tmdb_id));
-      setToast(`Removed rating for "${r.title}"`);
+      push(`Removed rating for "${r.title}"`);
     } else {
       setRatings((prev) => prev.map((x) => x.tmdb_id === r.tmdb_id ? { ...x, rating: newRating } : x));
-      setToast(`"${r.title}" rated ${newRating}★`);
+      push(`"${r.title}" rated ${newRating}★`);
     }
 
     try {
@@ -41,7 +43,7 @@ export default function RatingsPage() {
       else await upsertRating({ tmdb_id: r.tmdb_id, title: r.title, poster_path: r.poster_path, genres: r.genres, year: r.year, rating: newRating });
     } catch {
       setRatings(prevRatings);
-      setToast("Couldn't save — is the backend running?");
+      push("Couldn't save — is the backend running?");
     }
   }
 
@@ -50,8 +52,6 @@ export default function RatingsPage() {
 
   return (
     <div>
-      <Toast message={toast} onDismiss={() => setToast("")} />
-
       <PageHeader
         title="My Ratings"
         subtitle={loading ? "Loading…" : `${ratings.length} movie${ratings.length !== 1 ? "s" : ""} rated · these power your AI picks`}

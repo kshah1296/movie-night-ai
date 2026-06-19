@@ -9,7 +9,7 @@ import {
 } from "@/lib/api";
 import MovieCard from "@/components/MovieCard";
 import MovieModal from "@/components/MovieModal";
-import Toast from "@/components/Toast";
+import { useToast } from "@/components/ToastProvider";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
 import { SkeletonGrid } from "@/components/SkeletonCard";
@@ -17,6 +17,8 @@ import {
   STREAMING_PROVIDERS, loadServices, saveServices, loadStreamingOnly, saveStreamingOnly,
 } from "@/lib/streaming";
 import { useCardRatings } from "@/lib/ratings";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
+import { gridArrowNav } from "@/lib/gridNav";
 
 const MOODS = [
   { id: "cozy", emoji: "🛋️", label: "Cozy" },
@@ -36,6 +38,7 @@ const UNDO_WINDOW = 5000; // persist "not interested" only after this window (so
 interface ToastAction { label: string; fn: () => void }
 
 export default function HomePage() {
+  useDocumentTitle("For You");
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [taste, setTaste] = useState<TasteInfo | null>(null);
   const [source, setSource] = useState("");
@@ -52,9 +55,7 @@ export default function HomePage() {
   const [selectedMood, setSelectedMood] = useState<string | null>(null);
   const [streamingOnly, setStreamingOnly] = useState(false);
   const [services, setServices] = useState<number[]>([]);
-  const [toast, setToast] = useState("");
-  const [toastAction, setToastAction] = useState<ToastAction | null>(null);
-  const [toastId, setToastId] = useState(0);
+  const push = useToast();
   const [modalId, setModalId] = useState<number | null>(null);
 
   // tmdb_id -> timer that will persist the dismissal once the undo window passes
@@ -115,9 +116,7 @@ export default function HomePage() {
   const activeProviders = streamingOnly && services.length ? services : undefined;
 
   function showToast(msg: string, action?: ToastAction) {
-    setToast(msg);
-    setToastAction(action ?? null);
-    setToastId((n) => n + 1); // restart the timer even on an identical message (P2-16)
+    push(msg, action ? { actionLabel: action.label, onAction: action.fn, duration: UNDO_WINDOW } : undefined);
   }
 
   function pickGenre(g: string | null) {
@@ -308,7 +307,7 @@ export default function HomePage() {
             </div>
           ))}
         </div>
-        <Link href="/search" className="btn-primary" style={{ textDecoration: "none", display: "inline-block", fontSize: "1rem", padding: "0.75rem 2rem" }}>
+        <Link href="/search?nudge=rate" className="btn-primary" style={{ textDecoration: "none", display: "inline-block", fontSize: "1rem", padding: "0.75rem 2rem" }}>
           Start rating movies →
         </Link>
       </div>
@@ -343,15 +342,6 @@ export default function HomePage() {
 
   return (
     <div>
-      <Toast
-        message={toast}
-        id={toastId}
-        onDismiss={() => { setToast(""); setToastAction(null); }}
-        actionLabel={toastAction?.label}
-        onAction={toastAction?.fn}
-        duration={toastAction ? UNDO_WINDOW : 3000}
-      />
-
       {modalId && (
         <MovieModal
           tmdbId={modalId}
@@ -477,7 +467,7 @@ export default function HomePage() {
         )}
       </div>
 
-      <div style={{
+      <div className="content-fade-in" onKeyDown={gridArrowNav} style={{
         display: "grid",
         gridTemplateColumns: "repeat(auto-fill, minmax(min(320px, 100%), 1fr))",
         gap: "var(--space-5)",
@@ -512,6 +502,24 @@ export default function HomePage() {
           />
         ))}
       </div>
+
+      {/* UX11 — when the engine returns fewer than its target (pool thinning because you've
+          rated/dismissed most matches), be honest and point to the next step. */}
+      {!coldStart && !refreshing && selectedGenre === null && selectedMood === null
+        && !streamingOnly && recs.length > 0 && recs.length < 12 && (
+        <div style={{
+          marginTop: "var(--space-6)", textAlign: "center", padding: "1.25rem 1rem",
+          color: "var(--text-2)", fontSize: "0.85rem", lineHeight: 1.6,
+        }}>
+          🎬 You&apos;ve seen most of your best matches. Rate a few more films (or watch something on your
+          watchlist) and check back — fresh picks come in as your taste grows.
+          <div style={{ marginTop: "0.75rem" }}>
+            <Link href="/search" className="btn-secondary btn-sm" style={{ textDecoration: "none" }}>
+              Rate more movies
+            </Link>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

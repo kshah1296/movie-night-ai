@@ -22,7 +22,8 @@ A bold, colorful movie‑recommendation app that learns your taste and tells you
 - **Movie modal** — backdrop, cast, **clickable** streaming providers (deep‑link straight to Netflix/Disney+/…), trailer, and rate/watchlist actions.
 - **Learns from your ratings** — a linear **ranker is trained on your feedback** (`backend/train.py`) and only ships if it beats the previous scorer on an offline eval (time‑split, NDCG/Pearson). Ranking stays fully deterministic; the LLM never ranks.
 - **Self‑measuring** — every recommendation logs an impression + predicted score; a `GET /analytics` endpoint reports CTR, watchlist conversion, acceptance, rating‑prediction accuracy, novelty, and diversity.
-- **Accessible & responsive** — keyboard focus trap in dialogs, screen‑reader semantics, 44px touch targets, reduced‑motion support, WCAG‑contrast text.
+- **Settings** — Dark/Light theme, your default streaming services, and a "Not interested" manager (dismissed picks resurface after ~90 days, or restore them instantly).
+- **Power-user & accessible** — a **⌘K command palette** (jump to any movie/person), keyboard-navigable card grids, a stacking multi-undo toast queue, per-page titles, keyboard focus trap in dialogs, screen‑reader semantics, 44px touch targets, reduced‑motion support, WCAG‑contrast text.
 
 ---
 

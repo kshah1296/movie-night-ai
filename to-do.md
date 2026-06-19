@@ -36,21 +36,21 @@ From the 2026-06-17 multi-agent review board. ⭐ = the "first move" all four re
 
 ## 💡 Product / UX Backlog
 
-- [ ] **UX1** Command palette (⌘K) to jump to any movie/person #ux #frontend
-- [ ] **UX2** Keyboard nav on the card grid (arrows + Enter) #ux #a11y #frontend
-- [ ] **UX3** "Why this pick" expansion on For You cards (full reasoning inline) #ux #frontend
-- [ ] **UX4** Settings page for default streaming services (today only inline on For You) #ux #frontend
-- [ ] **UX5** "Not interested" management page + time-decay of exclusions (API already exists) #ux #backend #frontend
-- [ ] **UX6** Empty-watchlist → For You bridge (add top picks from the empty state) #ux #frontend
-- [ ] **UX7** Multi-action undo queue (today only the most-recent action is undoable) #ux #frontend
-- [ ] **UX8** Light theme (cheap now that everything uses `var(--*)` tokens) #ux #frontend
-- [ ] **UX9** Skeleton → content crossfade instead of a hard swap #ux #frontend
-- [ ] **UX10** Per-page `<title>` via Next metadata (history/tabs) #ux #frontend
-- [ ] **UX11** "You've seen most of your matches" message when the candidate pool shrinks #ux #frontend
-- [ ] **UX12** Decouple "rate" from "mark watched" (currently rating force-marks watched) #ux #product
-- [ ] **UX13** Rating/Watchlist data symmetry on remove + undo #ux #backend
-- [ ] **UX14** Discover "rate films you've seen" nudge when arriving from onboarding #ux #frontend
-- [ ] **UX15** Visible "more" affordance on horizontally-scrollable chip rows #ux #a11y #frontend
+- [x] **UX1** ✅ **DONE (2026-06-19)** Global **⌘K / Ctrl-K** command palette (`CommandPalette`, mounted in layout) — debounced search across movies + people, ↑↓/↵ keyboard nav, jumps to Discover (title query or person pivot). Also opens via a 🔍 ⌘K button in the nav (touch-friendly). #ux #frontend
+- [x] **UX2** ✅ **DONE (2026-06-19)** Card grids are keyboard-navigable — cards are focusable (`role=button`, `tabIndex=0`), Enter/Space opens, and a reusable `gridArrowNav` (`lib/gridNav.ts`) does arrow-key roving (Left/Right by one, Up/Down by a row) on For You + Discover. #ux #a11y #frontend
+- [x] **UX3** ✅ **DONE (2026-06-19)** For You cards have a "Why this pick? ▾" toggle that unclamps the explanation and reveals the bucket + bucket-reason + anchor inline (the bucket reason was previously a desktop-only hover tooltip → now mobile-accessible). `aria-expanded`. #ux #frontend
+- [x] **UX4** ✅ **DONE (2026-06-19)** New `/settings` page (+ Nav link) with a default streaming-services picker (shared `lib/streaming` set used by For You + Watchlist filters). #ux #frontend
+- [x] **UX5** ✅ **DONE (2026-06-19)** `/settings` also lists your "Not interested" movies with one-tap **Restore** (reuses `GET`/`DELETE /rec_feedback`). Backend now **decays exclusions**: `DISMISS_EXCLUDE_DAYS=90` — a dismissed movie is hard-excluded for 90 days then can resurface. #ux #backend #frontend
+- [x] **UX6** ✅ **DONE (2026-06-19)** Empty watchlist now leads with "✨ See your For You picks" (→ `/`) alongside Browse Movies. #ux #frontend
+- [x] **UX7** ✅ **DONE (2026-06-19)** Global stacking toast queue (`ToastProvider` + `useToast()` in the layout) replaces the per-page single toast. Each toast has its own timer + Undo closure, so several recent actions (e.g. dismissing/removing multiple movies) are **independently undoable**. Migrated For You / Discover / Watchlist / Ratings / Settings / Modal; deleted the old `Toast.tsx`. #ux #frontend
+- [x] **UX8** ✅ **DONE (2026-06-19)** Light theme via a `[data-theme="light"]` token override + a Dark/Light toggle on `/settings` (persisted in localStorage, applied pre-paint by an inline script in the layout → no flash). Tokenized the last hardcoded surfaces (nav bg, skeleton, select). #ux #frontend
+- [x] **UX9** ✅ **DONE (2026-06-19)** Real content now fades in (`.content-fade-in`) when it replaces the skeleton on For You + Discover — no hard swap. Respects `prefers-reduced-motion`. #ux #frontend
+- [x] **UX10** ✅ **DONE (2026-06-19)** Per-page tab titles via a `useDocumentTitle` hook (pages are client components, so this is the metadata-equivalent) on every page (For You / Discover / Watchlist / My Ratings / Taste DNA / Shared). #ux #frontend
+- [x] **UX11** ✅ **DONE (2026-06-19)** When the engine returns < its 12-pick target (pool thinning, not cold-start/filtered), For You shows an honest "You've seen most of your best matches — rate more / check back" note + a Rate-more CTA. #ux #frontend
+- [x] **UX12** ✅ **DECIDED (2026-06-19): keep coupled** — rating a movie implies you've seen it, so it stays filed as watched (the engine's watched signal depends on this). Working as intended, not a bug. #ux #product
+- [x] **UX13** ✅ **CLOSED (2026-06-19)** — was contingent on decoupling (UX12). With coupling kept, rate/remove/undo already round-trips through the same Rating+watchlist write path; no separate symmetry fix needed. Revisit only if a concrete desync is observed. #ux #backend
+- [x] **UX14** ✅ **DONE (2026-06-19)** Onboarding CTA now deep-links to `/search?nudge=rate`; Discover shows a dismissible "rate films you've already seen" banner when that param is present. #ux #frontend
+- [x] **UX15** ✅ **DONE (2026-06-19)** N/A by design — all chip rows use `flex-wrap`, so no chips are ever hidden off-screen (nothing to scroll to). Added a reusable `.scroll-fade-x` utility (right-edge fade) for any future single-line scroll row. #ux #a11y #frontend
 - [ ] **UX16** Weekly "Movie Night Picks" digest + email/notification (the weekly-return hook) #ux #retention
 - [ ] **UX17** Watchlist streaming-availability alerts — "now on Netflix" #ux #retention
 - [x] **UX18** ✅ **DONE (2026-06-19)** Taste Profile page (`/taste`) — SVG radar of the 10 bipolar DNA axes (bipolar: center=neg pole, edge=pos pole, dashed mid-ring=neutral; dot size = per-axis confidence) + precise diverging-bar breakdown + top genres/people/themes. New `GET /taste` endpoint (`routers/taste.py`) surfaces the persisted `taste_profile`. Nav link added. _(Editable taste controls deferred — read-only v1.)_ #ux #frontend

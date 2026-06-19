@@ -5,6 +5,7 @@ import Link from "next/link";
 import { getTasteProfile, type TasteProfile, type TasteAxis } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 
 // ── Radar geometry: 10 spokes. Bipolar mapping r = (value+1)/2 → center is the
 // negative pole, the outer edge is the positive pole, the mid-ring is neutral. ──
@@ -106,6 +107,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 export default function TastePage() {
+  useDocumentTitle("Taste DNA");
   const [data, setData] = useState<TasteProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

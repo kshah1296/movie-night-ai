@@ -23,10 +23,12 @@ import { useCardRatings } from "@/lib/ratings";
 import { STREAMING_PROVIDERS } from "@/lib/streaming";
 import PosterCard from "@/components/PosterCard";
 import MovieModal from "@/components/MovieModal";
-import Toast from "@/components/Toast";
+import { useToast } from "@/components/ToastProvider";
 import { SkeletonGrid } from "@/components/SkeletonCard";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
+import { gridArrowNav } from "@/lib/gridNav";
 
 // ---------- Filter vocabulary ----------
 
@@ -195,6 +197,7 @@ export default function SearchPage() {
 // ---------- Inner component (can use useSearchParams) ----------
 
 function SearchPageInner() {
+  useDocumentTitle("Discover");
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -217,8 +220,10 @@ function SearchPageInner() {
   const [ratings, setRatings] = useState<Record<number, number>>({});
   const [watchlisted, setWatchlisted] = useState<Record<number, boolean>>({});
   const [watched, setWatched] = useState<Record<number, boolean>>({});
-  const [toast, setToast] = useState("");
+  const push = useToast();
   const [modalId, setModalId] = useState<number | null>(null);
+  // UX14 — show a "rate films you've seen" nudge when arriving from first-run onboarding.
+  const [showRateNudge, setShowRateNudge] = useState(searchParams.get("nudge") === "rate");
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const filtersRef = useRef(filters);
@@ -343,7 +348,7 @@ function SearchPageInner() {
       setPage(next);
       setTotalPages(data.total_pages ?? 1);
     } catch {
-      if (fetchKeyRef.current === key) setToast("Couldn't load more movies");
+      if (fetchKeyRef.current === key) push("Couldn't load more movies");
     } finally {
       loadMoreBusyRef.current = false;
       setLoadingMore(false);
@@ -371,12 +376,12 @@ function SearchPageInner() {
 
     if (rating === 0) {
       setRatings((prev) => { const n = { ...prev }; delete n[movie.id]; return n; });
-      setToast(`Removed rating for "${movie.title}"`);
+      push(`Removed rating for "${movie.title}"`);
     } else {
       setRatings((prev) => ({ ...prev, [movie.id]: rating }));
       setWatchlisted((prev) => ({ ...prev, [movie.id]: true }));
       setWatched((prev) => ({ ...prev, [movie.id]: true }));
-      setToast(`Rated "${movie.title}" ${rating}★ · Added to Watched`);
+      push(`Rated "${movie.title}" ${rating}★ · Added to Watched`);
     }
 
     try {
@@ -387,7 +392,7 @@ function SearchPageInner() {
       else setRatings((prev) => ({ ...prev, [movie.id]: prevRating }));
       setWatchlisted((prev) => ({ ...prev, [movie.id]: prevWatchlisted }));
       setWatched((prev) => ({ ...prev, [movie.id]: prevWatched }));
-      setToast("Couldn't save — is the backend running?");
+      push("Couldn't save — is the backend running?");
     }
   }
 
@@ -397,13 +402,13 @@ function SearchPageInner() {
     const prevWatchlisted = watchlisted[movie.id] ?? false;
 
     setWatchlisted((prev) => ({ ...prev, [movie.id]: true }));
-    setToast(`Added "${movie.title}" to watchlist`);
+    push(`Added "${movie.title}" to watchlist`);
 
     try {
       await addToWatchlist({ tmdb_id: movie.id, title: movie.title, poster_path: movie.poster_path, genres, year });
     } catch {
       setWatchlisted((prev) => ({ ...prev, [movie.id]: prevWatchlisted }));
-      setToast("Couldn't save — is the backend running?");
+      push("Couldn't save — is the backend running?");
     }
   }
 
@@ -419,7 +424,6 @@ function SearchPageInner() {
 
   return (
     <div>
-      <Toast message={toast} onDismiss={() => setToast("")} />
 
       {modalId && (
         <MovieModal
@@ -442,6 +446,23 @@ function SearchPageInner() {
         title="Discover"
         subtitle="Browse with filters or search by title · click any movie for details"
       />
+
+      {showRateNudge && (
+        <div role="status" style={{
+          display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap",
+          marginBottom: "1.25rem", padding: "0.75rem 1rem",
+          background: "color-mix(in srgb, var(--accent) 10%, transparent)",
+          border: "1px solid color-mix(in srgb, var(--accent) 35%, transparent)",
+          borderRadius: "var(--radius-md)",
+        }}>
+          <span aria-hidden="true" style={{ fontSize: "1.25rem" }}>👋</span>
+          <span style={{ flex: 1, minWidth: 200, fontSize: "0.85rem", color: "var(--text-1)", lineHeight: 1.5 }}>
+            Find movies you&apos;ve <strong>already seen</strong> and tap the stars to rate them — a handful is
+            enough for the engine to learn your taste and fill your For You picks.
+          </span>
+          <button className="btn-secondary btn-sm" onClick={() => setShowRateNudge(false)}>Got it</button>
+        </div>
+      )}
 
       <div className="search-wrap">
         <span className="search-icon" aria-hidden="true">🔍</span>
@@ -625,7 +646,7 @@ function SearchPageInner() {
 
       {!loading && (
         <>
-          <div style={{
+          <div className="content-fade-in" onKeyDown={gridArrowNav} style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
             gap: "var(--space-4)",

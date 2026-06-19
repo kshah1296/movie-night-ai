@@ -9,6 +9,7 @@ const links = [
   { href: "/watchlist", label: "Watchlist" },
   { href: "/ratings", label: "My Ratings" },
   { href: "/taste", label: "Taste DNA" },
+  { href: "/settings", label: "Settings" },
 ];
 
 export default function Nav() {
@@ -18,7 +19,7 @@ export default function Nav() {
     <nav
       style={{
         borderBottom: "1px solid var(--border)",
-        background: "rgba(9,9,11,0.8)",
+        background: "var(--nav-bg)",
         backdropFilter: "blur(12px)",
         position: "sticky",
         top: 0,
@@ -64,6 +65,23 @@ export default function Nav() {
               </Link>
             );
           })}
+          <button
+            className="nav-link"
+            aria-label="Search (Command-K)"
+            title="Search — ⌘K"
+            onClick={() => window.dispatchEvent(new Event("mn:open-command-palette"))}
+            style={{
+              padding: "0.4rem 0.7rem", background: "none", border: "none", cursor: "pointer",
+              color: "var(--text-2)", fontSize: "clamp(0.75rem, 4vw, 0.875rem)",
+              display: "flex", alignItems: "center", gap: "0.3rem",
+            }}
+          >
+            <span aria-hidden="true">🔍</span>
+            <kbd style={{
+              fontSize: "0.65rem", padding: "0.05rem 0.3rem", borderRadius: 4,
+              border: "1px solid var(--border-strong)", color: "var(--text-3)",
+            }}>⌘K</kbd>
+          </button>
         </div>
       </div>
     </nav>

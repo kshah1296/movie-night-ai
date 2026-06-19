@@ -114,7 +114,8 @@ DB file (`movie_night.db`) created at repo root on first startup. **`init_db()`*
     `confidence`), per-rec `anchor`/`channel`/`bucket`/`bucket_reason`, and a `cold_start` flag + message (Q5).
     The **response cache busts on any ratings/watchlist/dismissal change** (Q6 state fingerprint). Serving logs
     `shown` (rec_feedback rotation) **and** `impression` rows (rec_events) + persists served DNA. `not_interested`
-    hard-excluded. Falls back to `source:"tmdb"` template reasons when Groq is exhausted (ranking unaffected — deterministic).
+    is hard-excluded but **decays** (`DISMISS_EXCLUDE_DAYS=90`, UX5 — older dismissals resurface; manage/restore them on `/settings`).
+    Falls back to `source:"tmdb"` template reasons when Groq is exhausted (ranking unaffected — deterministic).
 - **Movies** (`routers/movies.py`): `/discover` is the flexible proxy (`sort_by`, `genres`, `year_gte/lte`, `min_rating`, `runtime_gte/lte`, `providers`, `people`, `keywords` — commas converted to TMDB pipe-OR). `/person_search`, `/{id}/providers`, `/{id}/ratings`, **and the batch `/ratings`** MUST be declared before `/{tmdb_id}` (route shadowing — `/movies/ratings` would otherwise be captured by the int path param). `GET /movies/{id}` uses `append_to_response=credits,videos`.
 - **External ratings (OMDb)** (`routers/movies.py`): `/{id}/ratings` and batch `/ratings?ids=` return IMDb/RT/Metacritic, DB-cached in `movie_ratings_cache` (fetch-once, 14-day TTL; cap 30 ids/request, concurrency 5). Returns `{}` gracefully when `OMDB_API_KEY` is unset. The frontend `lib/ratings.ts` `useCardRatings()` hook batch-loads per grid page; `RatingBadges` renders them on every card + the modal.
 - **Analytics** (`routers/events.py` + `routers/analytics.py`): `rec_events` is the impression + engagement stream. The engine logs `impression` rows on serve; the frontend `lib/api.ts` `logEvent()` (fire-and-forget) logs `click`/`trailer`/`share`/`watchlist_add`/`skip`. `GET /analytics` derives CTR, watchlist conversion, acceptance, rating-prediction Pearson r (predicted_score vs actual rating), novelty, and DNA-distance diversity. Backend-only.
@@ -132,11 +133,15 @@ Next.js 16 App Router. All pages are client components (`"use client"`).
 | `app/watchlist/page.tsx` | Up Next / Watched tabs, **sort** (added/oldest/shortest/rating/year/title), **📺 streaming filter** + service picker, **runtime** chips, provider badges + runtime on cards, **🎲 Surprise me**, genre chips, mark watched, post-watch rating, remove with Undo |
 | `app/ratings/page.tsx` | Grid of all rated movies — edit or remove ratings |
 | `app/taste/page.tsx` | **Taste DNA** (UX18) — SVG radar of the 10 bipolar axes (center=neg pole, edge=pos pole, dashed mid-ring=neutral, dot size=confidence) + per-axis diverging bars + top genres/people/themes. Reads `GET /taste` |
+| `app/settings/page.tsx` | **Settings** (UX4/5/8) — Dark/Light theme toggle, default streaming-services picker (shared `lib/streaming` set), and a "Not interested" management list with one-tap Restore |
 | `app/share/page.tsx` | Read-only public watchlist view — static border tiles (no hover effect) |
 | `lib/api.ts` | All fetch calls to FastAPI (`cache: "no-store"` globally). Includes `getMovieRatingsBatch()` and `logEvent()` (fire-and-forget analytics) |
 | `lib/tmdb.ts` | `posterUrl()`, `genreIdsToNames()`, `GENRE_MAP` |
 | `lib/streaming.ts` | `STREAMING_PROVIDERS` (8 TMDB US provider ids) + localStorage persistence for the shared "my services" set (For You + Watchlist) |
 | `lib/ratings.ts` | `useCardRatings()` hook (session-cached, batched, deduped external-score loader) + `rtIsFresh()` |
+| `lib/useDocumentTitle.ts` | UX10 — sets per-page tab title (client pages can't export Next `metadata`) |
+| `lib/theme.ts` | UX8 — dark/light theme get/set/apply + `THEME_INIT_SCRIPT` (pre-paint, no-flash inline script run from the layout) |
+| `lib/gridNav.ts` | UX2 — `gridArrowNav` arrow-key roving across `[data-card]` grid items |
 | `lib/watchlistMeta.ts` | `useWatchMeta()` hook — batched runtime + streaming-provider loader for the watchlist (mirrors `useCardRatings`) |
 | `lib/providers.ts` | `providerLink(providerId, title, fallback)` — best-effort deep links to each streaming/store service (opens the service searched for the title; falls back to the JustWatch page) |
 | `components/MovieCard.tsx` | For-You card (horizontal) — `Poster` + ratings badges, AI explanation, `kicker` ("Inspired by X"), `bucket` tag, `onDismiss` (Not Interested ✕) |
@@ -145,10 +150,11 @@ Next.js 16 App Router. All pages are client components (`"use client"`).
 | `components/RatingBadges.tsx` | Compact TMDB/🍅 RT/IMDb/MC score row, reused on cards + modal (renders nothing when scores absent) |
 | `components/StarRating.tsx` | 1–5 star rating; click current star to clear; `.star-filled` pop animation |
 | `components/MovieModal.tsx` | Full detail modal: backdrop, cast, **clickable** streaming providers (deep links), trailer link, rate/watchlist; focus trap (focuses the dialog, not the ✕) |
-| `components/Toast.tsx` | Slide-up/slide-down toast; supports `actionLabel`/`onAction` for Undo |
+| `components/ToastProvider.tsx` | UX7 — global **stacking** toast queue (`<ToastProvider>` in layout + `useToast()` push). Each toast self-times + carries its own Undo closure, so multiple recent actions are independently undoable (replaced the old single `Toast.tsx`) |
 | `components/SkeletonCard.tsx` | Shimmer skeleton + `SkeletonGrid({ variant: "row" | "poster" })` (Discover uses `poster`) |
 | `components/PageHeader.tsx` / `EmptyState.tsx` | Shared page header (solid title) + empty/error state |
-| `components/Nav.tsx` | Sticky nav (For You / Discover / Watchlist / My Ratings / Taste DNA) with mobile media query |
+| `components/CommandPalette.tsx` | UX1 — global ⌘K/Ctrl-K palette (mounted in layout): debounced movie+person search, ↑↓/↵ nav, jumps to Discover. Also opens via a window event from the Nav 🔍 button |
+| `components/Nav.tsx` | Sticky nav (For You / Discover / Watchlist / My Ratings / Taste DNA / Settings) + a 🔍 ⌘K palette trigger; `--nav-bg` token (themed); mobile media query |
 
 ### Styling
 Tailwind v4 — configured via `@import "tailwindcss"` and `@theme` in `globals.css` (no `tailwind.config.js`). All custom styles are in `globals.css`.
@@ -219,6 +225,8 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 - **Watchlist page**: Up Next / Watched tabs + a "find a movie tonight" toolkit — sort (recently added / oldest / shortest runtime / highest rated / newest / title), 📺 streaming filter ("on my services") with provider badges + runtime on each card, runtime chips, 🎲 Surprise-me random pick, genre chips, mark watched/unwatch, post-watch rating, remove with Undo, "🔗 Share list", modal on card click
 - **Ratings page**: Grid of all rated movies, edit rating in place, remove
 - **Taste DNA page** (`/taste`, UX18): visualizes the learned taste profile — an SVG radar of the 10 bipolar axes (dot size = per-axis confidence, dashed mid-ring = neutral) + a precise per-axis diverging-bar breakdown + top genres/people/themes. Read-only; refreshed whenever For You rebuilds the profile
+- **Settings page** (`/settings`): Dark/Light theme toggle (UX8), default streaming-services picker (UX4), "Not interested" management + Restore (UX5)
+- **Command palette** (⌘K, UX1): global movie/person search → jump to Discover. **Keyboard-navigable card grids** (UX2). Per-page tab titles (UX10), content fade-in (UX9), "Why this pick?" card expander (UX3), pool-exhaustion + onboarding nudges (UX11/UX14)
 - **Movie modal**: Backdrop, poster, cast, score badges (TMDB/IMDb/RT/MC), **clickable streaming providers** (deep-link to the service searched for the title), trailer link, rate/watchlist, focus trap (focuses the dialog)
 - **Share page**: Read-only watchlist split into Up Next / Already Watched
 - **Analytics**: every served rec logs an impression + predicted score; `GET /analytics` reports CTR, conversion, acceptance, prediction accuracy, novelty, diversity

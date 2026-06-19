@@ -16,7 +16,8 @@ import { useCardRatings } from "@/lib/ratings";
 import { useWatchMeta } from "@/lib/watchlistMeta";
 import { STREAMING_PROVIDERS, loadServices, saveServices } from "@/lib/streaming";
 import { logEvent } from "@/lib/api";
-import Toast from "@/components/Toast";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
+import { useToast } from "@/components/ToastProvider";
 import { SkeletonGrid } from "@/components/SkeletonCard";
 import MovieModal from "@/components/MovieModal";
 import PageHeader from "@/components/PageHeader";
@@ -44,14 +45,13 @@ const PROVIDER_LABEL: Record<number, string> = Object.fromEntries(
 const SORT_KEY = "movieNightWatchlistSort";
 
 export default function WatchlistPage() {
+  useDocumentTitle("Watchlist");
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("unwatched");
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
-  const [toast, setToast] = useState("");
-  const [toastId, setToastId] = useState(0);
-  const [removed, setRemoved] = useState<{ item: WatchlistItem; index: number } | null>(null);
+  const push = useToast();
   const [modalId, setModalId] = useState<number | null>(null);
   const [sort, setSort] = useState<SortKey>("added");
   const [runtimeFilter, setRuntimeFilter] = useState<string | null>(null);
@@ -79,11 +79,8 @@ export default function WatchlistPage() {
     saveServices(next);
   }
 
-  // Plain toast (clears any pending Undo so it can't attach to an unrelated message).
   function showToast(msg: string) {
-    setToast(msg);
-    setRemoved(null);
-    setToastId((n) => n + 1);
+    push(msg);
   }
 
   async function toggleWatched(item: WatchlistItem) {
@@ -116,9 +113,13 @@ export default function WatchlistPage() {
   async function handleRemove(item: WatchlistItem) {
     const index = items.findIndex((i) => i.tmdb_id === item.tmdb_id);
     setItems((prev) => prev.filter((i) => i.tmdb_id !== item.tmdb_id));
-    setRemoved({ item, index });          // capture position so Undo restores in place (P2-6)
-    setToast(`Removed "${item.title}"`);
-    setToastId((n) => n + 1);
+    // Undo is captured in this toast's own closure (UX7) — so removing several items in a row
+    // leaves each independently undoable, restoring at its original position (P2-6).
+    push(`Removed "${item.title}"`, {
+      actionLabel: "Undo",
+      onAction: () => undoRemove(item, index),
+      duration: 6000,
+    });
     try {
       await removeFromWatchlist(item.tmdb_id);
     } catch {
@@ -127,22 +128,17 @@ export default function WatchlistPage() {
         copy.splice(Math.min(index < 0 ? copy.length : index, copy.length), 0, item);
         return copy;
       });
-      setRemoved(null);
       showToast("Couldn't remove — is the backend running?");
     }
   }
 
-  async function handleUndo() {
-    const snapshot = removed;
-    if (!snapshot) return;
-    const { item, index } = snapshot;
+  async function undoRemove(item: WatchlistItem, index: number) {
     setItems((prev) => {
       if (prev.some((i) => i.tmdb_id === item.tmdb_id)) return prev;
       const copy = [...prev];
       copy.splice(Math.min(index < 0 ? copy.length : index, copy.length), 0, item);
       return copy;
     });
-    setRemoved(null);
     try {
       await addToWatchlist({
         tmdb_id: item.tmdb_id,
@@ -212,15 +208,6 @@ export default function WatchlistPage() {
 
   return (
     <div>
-      <Toast
-        message={toast}
-        id={toastId}
-        onDismiss={() => { setToast(""); setRemoved(null); }}
-        duration={removed ? 6000 : 3500}
-        actionLabel={removed ? "Undo" : undefined}
-        onAction={removed ? handleUndo : undefined}
-      />
-
       {modalId && (
         <MovieModal
           tmdbId={modalId}
@@ -365,9 +352,12 @@ export default function WatchlistPage() {
             <EmptyState
               emoji="📋"
               title="Your watchlist is empty"
-              subtitle="Browse or search for movies and tap “+ Watchlist” to save them for later."
+              subtitle="Get a head start: add a few of your personalized For You picks, or browse the full catalog."
             >
-              <Link href="/search" className="btn-primary" style={{ textDecoration: "none", display: "inline-block" }}>
+              <Link href="/" className="btn-primary" style={{ textDecoration: "none", display: "inline-block" }}>
+                ✨ See your For You picks
+              </Link>
+              <Link href="/search" className="btn-secondary" style={{ textDecoration: "none", display: "inline-block" }}>
                 Browse Movies
               </Link>
             </EmptyState>

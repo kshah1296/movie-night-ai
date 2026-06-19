@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import StarRating from "@/components/StarRating";
 import Poster from "@/components/Poster";
 import RatingBadges from "@/components/RatingBadges";
@@ -44,11 +45,24 @@ interface MovieCardProps {
 export default function MovieCard({
   movie, index, rating, inWatchlist, isWatched, ratings, onOpen, onRate, onWatchlist, onDismiss,
 }: MovieCardProps) {
+  const [showWhy, setShowWhy] = useState(false);
+  // "Why this pick?" only makes sense on For You cards (explanation + bucket reasoning present).
+  const canExplain = Boolean(movie.bodyEmphasis && (movie.bucketReason || movie.kicker));
   return (
     <div
       className="gradient-border card-in"
+      data-card
+      role="button"
+      tabIndex={0}
+      aria-label={`${movie.title} — open details`}
       style={{ overflow: "hidden", cursor: "pointer", animationDelay: `${Math.min(index * 40, 400)}ms` }}
       onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
     >
       {onDismiss && (
         <button
@@ -109,14 +123,49 @@ export default function MovieCard({
             color: movie.bodyEmphasis ? "var(--text-bright)" : "var(--text-2)",
             fontSize: movie.bodyEmphasis ? "var(--font-sm)" : "var(--font-xs)",
             lineHeight: movie.bodyEmphasis ? 1.5 : 1.4,
-            marginBottom: "var(--space-3)",
+            marginBottom: canExplain ? "0.3rem" : "var(--space-3)",
             display: "-webkit-box",
-            WebkitLineClamp: movie.bodyEmphasis ? 3 : 2,
+            WebkitLineClamp: showWhy ? "unset" : (movie.bodyEmphasis ? 3 : 2),
             WebkitBoxOrient: "vertical",
             overflow: "hidden",
           }}>
             {movie.body}
           </p>
+
+          {/* UX3 — expandable "Why this pick?" surfacing the bucket reasoning + anchor inline
+              (the bucket reason is otherwise only a desktop hover tooltip). */}
+          {canExplain && (
+            <div onClick={(e) => e.stopPropagation()} style={{ marginBottom: "var(--space-3)" }}>
+              <button
+                onClick={() => setShowWhy((v) => !v)}
+                aria-expanded={showWhy}
+                style={{
+                  background: "none", border: "none", cursor: "pointer", padding: 0,
+                  color: "var(--accent)", fontSize: "0.72rem", fontWeight: 600,
+                }}
+              >
+                {showWhy ? "Hide reasoning ▴" : "Why this pick? ▾"}
+              </button>
+              {showWhy && (
+                <div style={{
+                  marginTop: "0.4rem", padding: "0.5rem 0.65rem",
+                  background: "var(--surface-2)", borderRadius: "var(--radius-sm)",
+                  border: "1px solid var(--border)", fontSize: "0.72rem",
+                  color: "var(--text-2)", lineHeight: 1.5,
+                }}>
+                  {movie.bucket && (
+                    <div style={{ marginBottom: movie.bucketReason || movie.kicker ? "0.3rem" : 0 }}>
+                      <strong style={{ color: "var(--text-1)" }}>{movie.bucket}</strong>
+                      {movie.bucketReason ? ` — ${movie.bucketReason}` : ""}
+                    </div>
+                  )}
+                  {movie.kicker && (
+                    <div style={{ color: "var(--text-3)" }}>🎯 {movie.kicker}</div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           <div onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>

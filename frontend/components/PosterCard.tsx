@@ -37,11 +37,21 @@ export default function PosterCard({
   return (
     <div
       className="gradient-border card-in"
+      data-card
+      role="button"
+      tabIndex={0}
+      aria-label={`${movie.title} — open details`}
       style={{
         overflow: "hidden", cursor: "pointer", display: "flex", flexDirection: "column",
         animationDelay: `${Math.min(index * 40, 400)}ms`,
       }}
       onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
     >
       <div
         className="poster-frame"

@@ -11,7 +11,7 @@ import { posterUrl } from "@/lib/tmdb";
 import { providerLink } from "@/lib/providers";
 import StarRating from "@/components/StarRating";
 import RatingBadges from "@/components/RatingBadges";
-import Toast from "@/components/Toast";
+import { useToast } from "@/components/ToastProvider";
 
 interface Props {
   tmdbId: number;
@@ -32,7 +32,7 @@ export default function MovieModal({
   const [loadError, setLoadError] = useState(false);
   const [rating, setRating] = useState(initialRating);
   const [watchlisted, setWatchlisted] = useState(initialWatchlisted);
-  const [toast, setToast] = useState("");
+  const push = useToast();
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
@@ -98,7 +98,7 @@ export default function MovieModal({
       await deleteRating(movie.id);
       setRating(0);
       onRated?.(movie.id, 0);
-      setToast("Rating removed");
+      push("Rating removed");
       return;
     }
     await rateAndAddWatched({ tmdb_id: movie.id, title: movie.title, poster_path: movie.poster_path, genres, year, rating: r });
@@ -106,7 +106,7 @@ export default function MovieModal({
     setWatchlisted(true);
     onRated?.(movie.id, r);
     onWatchlisted?.(movie.id);
-    setToast(`Rated ${r}★ · Added to Watched`);
+    push(`Rated ${r}★ · Added to Watched`);
   }
 
   async function handleWatchlist() {
@@ -116,7 +116,7 @@ export default function MovieModal({
     await addToWatchlist({ tmdb_id: movie.id, title: movie.title, poster_path: movie.poster_path, genres, year });
     setWatchlisted(true);
     onWatchlisted?.(movie.id);
-    setToast("Added to Watchlist");
+    push("Added to Watchlist");
   }
 
   const backdropUrl = movie?.backdrop_path
@@ -335,8 +335,6 @@ export default function MovieModal({
             )}
           </div>
         )}
-
-        <Toast message={toast} onDismiss={() => setToast("")} />
       </div>
     </div>
   );

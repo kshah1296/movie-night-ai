@@ -90,6 +90,7 @@ ENRICH_BATCH_LIMIT = 15  # max facet fetches per request; the backlog drains acr
 DNA_BATCH_LIMIT = 8      # max LLM DNA-scorings per request (rated movies prioritized)
 DISMISS_WEIGHT = -1.5    # a "not interested" ✕ as negative taste (softer than a 1★, the user didn't watch it)
 DISMISS_LIMIT = 25       # only the most-recent N dismissals shape taste (older ones fade out)
+DISMISS_EXCLUDE_DAYS = 90  # a dismissed movie stays hard-excluded for this long, then can resurface (UX5)
 # M1 — implicit engagement on movies the user didn't rate/watchlist/dismiss is mild positive intent.
 ENGAGE_CLICK = 0.4       # opened the detail modal
 ENGAGE_TRAILER = 0.7     # watched the trailer (stronger intent)
@@ -779,7 +780,12 @@ async def build_recommendations(
     not_interested = (db.query(RecFeedback)
                       .filter(RecFeedback.action == "not_interested")
                       .order_by(RecFeedback.created_at).all())
-    not_interested_ids = {f.tmdb_id for f in not_interested}
+    # UX5 — exclusions DECAY: only dismissals from the last DISMISS_EXCLUDE_DAYS are hard-excluded,
+    # so a movie you passed on long ago can resurface (tastes change). The negative-taste signal
+    # still uses the most-recent DISMISS_LIMIT below.
+    exclude_cutoff = datetime.utcnow() - timedelta(days=DISMISS_EXCLUDE_DAYS)
+    not_interested_ids = {f.tmdb_id for f in not_interested
+                          if f.created_at is None or f.created_at >= exclude_cutoff}
     # Most-recent dismissals become negative taste (Q2); older ones fade out of influence.
     dismissed_ids = [f.tmdb_id for f in not_interested][-DISMISS_LIMIT:]
     shown_cutoff = datetime.utcnow() - timedelta(days=3)
