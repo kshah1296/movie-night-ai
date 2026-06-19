@@ -154,7 +154,7 @@ Next.js 16 App Router. All pages are client components (`"use client"`).
 | `components/SkeletonCard.tsx` | Shimmer skeleton + `SkeletonGrid({ variant: "row" | "poster" })` (Discover uses `poster`) |
 | `components/PageHeader.tsx` / `EmptyState.tsx` | Shared page header (solid title) + empty/error state |
 | `components/CommandPalette.tsx` | UX1 — global ⌘K/Ctrl-K palette (mounted in layout): debounced movie+person search, ↑↓/↵ nav, jumps to Discover. Also opens via a window event from the Nav 🔍 button |
-| `components/Nav.tsx` | Sticky nav (For You / Discover / Watchlist / My Ratings / Taste DNA / Settings) + a 🔍 ⌘K palette trigger; `--nav-bg` token (themed); mobile media query |
+| `components/Nav.tsx` | Sticky nav — 4 text sections (For You / Discover / Watchlist / My Ratings) + a divider + secondary **icon** tools (🧬 Taste DNA, ⚙️ Settings, 🔍 ⌘K palette trigger). `.nav-icon` style, `--nav-bg` token (themed), ⌘K hint hidden on mobile |
 
 ### Styling
 Tailwind v4 — configured via `@import "tailwindcss"` and `@theme` in `globals.css` (no `tailwind.config.js`). All custom styles are in `globals.css`.

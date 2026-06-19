@@ -597,13 +597,29 @@ body::before {
 .nav-link[aria-current="page"]::after {
   content: "";
   position: absolute;
-  left: 0.9rem;
-  right: 0.9rem;
+  left: 0.85rem;
+  right: 0.85rem;
   bottom: 2px;
   height: 2px;
   border-radius: 2px;
   background: var(--gradient-2);
 }
+
+/* Secondary nav tools (Taste DNA / Settings / Search) — compact icon buttons */
+.nav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  font-size: 1.05rem;
+  text-decoration: none;
+  transition: color 0.15s, background 0.15s;
+}
+.nav-icon:hover { color: var(--text-1) !important; background: var(--surface-2); }
 
 /* Search field affordances */
 .search-wrap {

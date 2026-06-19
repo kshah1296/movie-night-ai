@@ -3,13 +3,17 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+// Primary sections (text) vs. secondary tools (icons), so the bar stays uncluttered.
 const links = [
   { href: "/", label: "For You" },
   { href: "/search", label: "Discover" },
   { href: "/watchlist", label: "Watchlist" },
   { href: "/ratings", label: "My Ratings" },
-  { href: "/taste", label: "Taste DNA" },
-  { href: "/settings", label: "Settings" },
+];
+
+const iconLinks = [
+  { href: "/taste", label: "Taste DNA", icon: "🧬" },
+  { href: "/settings", label: "Settings", icon: "⚙️" },
 ];
 
 export default function Nav() {
@@ -44,7 +48,7 @@ export default function Nav() {
           </span>
         </Link>
 
-        <div className="nav-links" style={{ display: "flex", gap: "0.25rem" }}>
+        <div className="nav-links" style={{ display: "flex", alignItems: "center", gap: "0.15rem" }}>
           {links.map(({ href, label }) => {
             const active = pathname === href;
             return (
@@ -54,7 +58,7 @@ export default function Nav() {
                 className="nav-link"
                 aria-current={active ? "page" : undefined}
                 style={{
-                  padding: "0.4rem 0.9rem",
+                  padding: "0.4rem 0.85rem",
                   fontSize: "clamp(0.75rem, 4vw, 0.875rem)",
                   fontWeight: active ? 600 : 500,
                   color: active ? "var(--text-1)" : "var(--text-2)",
@@ -65,22 +69,34 @@ export default function Nav() {
               </Link>
             );
           })}
+
+          <span aria-hidden="true" style={{ width: 1, height: 22, background: "var(--border)", margin: "0 0.35rem" }} />
+
+          {iconLinks.map(({ href, label, icon }) => {
+            const active = pathname === href;
+            return (
+              <Link
+                key={href}
+                href={href}
+                className="nav-icon"
+                title={label}
+                aria-label={label}
+                aria-current={active ? "page" : undefined}
+                style={{ color: active ? "var(--text-1)" : "var(--text-2)", background: active ? "var(--accent-soft)" : "transparent" }}
+              >
+                <span aria-hidden="true">{icon}</span>
+              </Link>
+            );
+          })}
+
           <button
-            className="nav-link"
-            aria-label="Search (Command-K)"
-            title="Search — ⌘K"
+            className="nav-icon"
+            aria-label="Search"
+            title="Search (⌘K)"
             onClick={() => window.dispatchEvent(new Event("mn:open-command-palette"))}
-            style={{
-              padding: "0.4rem 0.7rem", background: "none", border: "none", cursor: "pointer",
-              color: "var(--text-2)", fontSize: "clamp(0.75rem, 4vw, 0.875rem)",
-              display: "flex", alignItems: "center", gap: "0.3rem",
-            }}
+            style={{ color: "var(--text-2)" }}
           >
             <span aria-hidden="true">🔍</span>
-            <kbd style={{
-              fontSize: "0.65rem", padding: "0.05rem 0.3rem", borderRadius: 4,
-              border: "1px solid var(--border-strong)", color: "var(--text-3)",
-            }}>⌘K</kbd>
           </button>
         </div>
       </div>
