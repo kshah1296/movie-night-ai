@@ -17,11 +17,30 @@ From the 2026-06-17 multi-agent review board. ⭐ = the "first move" all four re
 
 ## 🚀 Launch-Gating — required before any public multi-user launch
 
+- [x] **QA-EB** ✅ **DONE (2026-06-24)** Global error boundaries — `app/error.tsx` (route errors, with Try-again), `app/global-error.tsx` (root-layout errors, self-contained html/body), `app/not-found.tsx` (custom 404). No more white screen on a render crash. #critical #frontend #blocker
+- [x] **QA-GB** ✅ **DONE (2026-06-24)** Group endpoint bounded — Pydantic caps (≤10 members, ≤200 ratings/member, ≤50 genre_ids, rating 1–5, name ≤60) → over-limit input rejected with 422; guests with <3 ratings dropped server-side. Closes the `O(candidates × members)` DoS. #critical #backend #blocker
 - [ ] **C1** User identity + data isolation: `users` table, session/device id, `user_id` FK on all data, scope every query #critical #backend #db #blocker
 - [ ] **C2** Capability-token share links (`/watchlist/share/{token}`), never "all rows" #critical #backend #blocker
 - [ ] **C3** Auth + per-IP/user rate limit + daily LLM budget guard on `/recommendations` #critical #backend #blocker
 - [ ] **C5** Make `GET /recommendations` read-only; move impression writes to `POST /events`, TTL sweeps to cron #critical #backend
 - [ ] **C4** Migrate SQLite → Postgres + Redis for the shared cache (multi-worker safe) #critical #db #infra
+
+
+## 🔍 QA Review Board findings (2026-06-24) — see `Improvement_plans/2026-06-24-QA-REVIEW-BOARD.md`
+
+P1 (fix soon):
+- [x] **QA-EXPL** ✅ **DONE (2026-06-24)** Template explanations now key on the **strongest concrete match** (`_matched_signal`: loved director → actor → theme → genre → DNA/anchor) with deterministic phrasing variants — so the Groq-down fallback no longer shows twelve identical "fast-paced, emotional feel of X" lines. Applies to both single-user + group. #rec #backend #p1
+- [x] **QA-TIMEOUT** ✅ **DONE (2026-06-24)** `req()` now wraps every fetch in an `AbortController` with a 30s timeout → a hung TMDB/Groq call aborts with a clear "taking longer than usual" error instead of spinning forever. #frontend #reliability #p1
+- [x] **QA-WLVIRT** ✅ **DONE (2026-06-24)** Watchlist: in-list **🔍 search** (filters by title, shown past 8 items) + render cap of 48 cards with a **"Show more"** button — no longer renders 100+ cards (and their meta/score fetches) at once. #frontend #perf #p1
+- [x] **QA-OBS** ✅ **DONE (2026-06-24)** Structured per-request log line from the engine: `rec served cache=hit|miss ms=… source=ai|tmdb pool=… picks=… cold_start=… model=…` — surfaces latency, prose source (Groq up vs template), candidate-pool size, and learned-model status. (Full metrics/dashboards still want Postgres+infra later.) #backend #infra #p1
+- [x] **QA-E2E** ✅ **DONE (2026-06-24)** Playwright harness (`frontend/playwright.config.ts` + `e2e/smoke.spec.ts`, `npm run test:e2e`): every primary route renders without the error boundary, the ⌘K palette opens, and an unknown route shows the custom 404. **3 passing.** Catches the white-screen class. #test #p1
+
+P2 (improvements):
+- [x] **QA-FRESH** ✅ **DONE (2026-06-24)** `_ensure_recency` guarantees ≥1 pick from the last 4 years (swaps the lowest-scoring old pick for the best recent candidate) — verified a 2023 film now surfaces where the set was previously all pre-2002. Applies to For You + group. #rec #p2
+- [x] **QA-TONIGHT** ✅ **DONE (2026-06-24)** Watchlist **🍿 Tonight** button — one tap picks the best *unwatched* movie that's ≤2h and (if you've set services) streamable on them, ranked by score, and opens it. The "stop scrolling, just tell me" shortcut. #frontend #product #p2
+- [x] **QA-FATIGUE** ✅ **DONE (2026-06-24)** For You leads with mood pills + picks; the 12 genre chips and the streaming-service filter now collapse behind a single **⚙ Refine** toggle (which surfaces any active filter so it's never hidden). Much less always-on control density. _(Discover drawer left as-is — already gated behind a drawer.)_ #ux #p2
+- [x] **QA-GUESTFI** ✅ **DONE (2026-06-24)** `guest_profile` now upgrades guests to **people + theme affinity** (not just genre+proxy) using cached facets of their rated movies — the group builder enriches guest-rated ids via `_ensure_facets` and passes them in. Degrades to genre+proxy when facets absent. #rec #p2
+- [x] **QA-ANCHOR** ✅ **DONE (2026-06-24)** `_diversify_anchors` reassigns "Inspired by X" across the final picks with a usage penalty so the same favorite isn't named repeatedly — verified 12 distinct anchors of 12 (was repeating). Applies to For You + group. #rec #p2
 
 
 ## 🛠️ Engineering Backlog (secondary — lower value than Rec Quality)
@@ -54,7 +73,7 @@ From the 2026-06-17 multi-agent review board. ⭐ = the "first move" all four re
 - [ ] **UX16** Weekly "Movie Night Picks" digest + email/notification (the weekly-return hook) #ux #retention
 - [ ] **UX17** Watchlist streaming-availability alerts — "now on Netflix" #ux #retention
 - [x] **UX18** ✅ **DONE (2026-06-19)** Taste Profile page (`/taste`) — SVG radar of the 10 bipolar DNA axes (bipolar: center=neg pole, edge=pos pole, dashed mid-ring=neutral; dot size = per-axis confidence) + precise diverging-bar breakdown + top genres/people/themes. New `GET /taste` endpoint (`routers/taste.py`) surfaces the persisted `taste_profile`. Nav link added. _(Editable taste controls deferred — read-only v1.)_ #ux #frontend
-- [ ] **UX19** Group "Movie Night" mode — blend 2+ profiles into one pick (the app's namesake) #ux #product
+- [x] **UX19** ✅ **DONE (2026-06-21)** Group "Movie Night" mode — `/group` page: add in-session guests (name + quick-rate ~5 trending films via stars, persisted in localStorage), then `POST /recommendations/group` blends host + guests with a **least-misery + average** objective (`backend/group.py`) so the pick is one nobody hates. Per-pick **member-fit chips** ("You: loves it · Alex: likes it"). Reuses the whole engine (parallel builder, single-user path untouched). Nav link added. Unit-tested (`test_group.py`). Scoped in `Improvement_plans/2026-06-21-GROUP-MOVIE-NIGHT-PLAN.md`. #ux #product
 
 
 ## 🧊 Deferred (parked, with reason)

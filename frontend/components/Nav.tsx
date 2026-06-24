@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 // Primary sections (text) vs. secondary tools (icons), so the bar stays uncluttered.
 const links = [
   { href: "/", label: "For You" },
+  { href: "/group", label: "Movie Night" },
   { href: "/search", label: "Discover" },
   { href: "/watchlist", label: "Watchlist" },
   { href: "/ratings", label: "My Ratings" },

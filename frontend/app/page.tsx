@@ -54,6 +54,7 @@ export default function HomePage() {
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   const [selectedMood, setSelectedMood] = useState<string | null>(null);
   const [streamingOnly, setStreamingOnly] = useState(false);
+  const [showRefine, setShowRefine] = useState(false);   // QA-FATIGUE — collapse secondary filters
   const [services, setServices] = useState<number[]>([]);
   const push = useToast();
   const [modalId, setModalId] = useState<number | null>(null);
@@ -423,16 +424,17 @@ export default function HomePage() {
           </button>
         ))}
         <span className="mode-divider" />
-        {GENRES.map((g) => (
-          <button
-            key={g}
-            className={`chip${selectedGenre === g ? " chip-active" : ""}`}
-            aria-pressed={selectedGenre === g}
-            onClick={() => pickGenre(selectedGenre === g ? null : g)}
-          >
-            {g}
-          </button>
-        ))}
+        {/* QA-FATIGUE — secondary filters live behind one toggle so the page leads with picks,
+            not a wall of controls. The button surfaces any active filter so it's never hidden. */}
+        <button
+          className={`tab${showRefine ? " tab-active" : ""}`}
+          aria-expanded={showRefine}
+          onClick={() => setShowRefine((v) => !v)}
+        >
+          <span aria-hidden="true">⚙</span> Refine
+          {selectedGenre ? ` · ${selectedGenre}` : ""}
+          {streamingOnly && services.length ? " · 📺" : ""}
+        </button>
         {(selectedGenre || selectedMood) && (
           <button onClick={() => pickGenre(null)} className="chip">
             ✕ Clear
@@ -440,32 +442,50 @@ export default function HomePage() {
         )}
       </div>
 
-      {/* Streaming filter: toggle + service chips (persisted in localStorage) */}
-      <div style={{ display: "flex", gap: "0.4rem", marginBottom: "var(--space-6)", flexWrap: "wrap", alignItems: "center" }}>
-        <button
-          className={`tab${streamingOnly && services.length ? " tab-active" : ""}`}
-          aria-pressed={streamingOnly}
-          onClick={toggleStreaming}
-          style={streamingOnly && services.length === 0 ? { border: "1px solid var(--gold)", color: "var(--gold)" } : undefined}
-        >
-          <span aria-hidden="true">📺</span> My services only
-        </button>
-        {streamingOnly && STREAMING_PROVIDERS.map((p) => (
-          <button
-            key={p.id}
-            className={`chip${services.includes(p.id) ? " chip-active" : ""}`}
-            aria-pressed={services.includes(p.id)}
-            onClick={() => toggleService(p.id)}
-          >
-            {p.label}
-          </button>
-        ))}
-        {streamingOnly && services.length === 0 && (
-          <span style={{ color: "var(--gold)", fontSize: "0.75rem", fontWeight: 600 }}>
-            ← pick your services (filter is off until you do)
-          </span>
-        )}
-      </div>
+      {showRefine && (
+        <>
+          {/* Genre chips */}
+          <div className="chip-row" style={{ marginBottom: "var(--space-2)" }}>
+            {GENRES.map((g) => (
+              <button
+                key={g}
+                className={`chip${selectedGenre === g ? " chip-active" : ""}`}
+                aria-pressed={selectedGenre === g}
+                onClick={() => pickGenre(selectedGenre === g ? null : g)}
+              >
+                {g}
+              </button>
+            ))}
+          </div>
+
+          {/* Streaming filter: toggle + service chips (persisted in localStorage) */}
+          <div style={{ display: "flex", gap: "0.4rem", marginBottom: "var(--space-6)", flexWrap: "wrap", alignItems: "center" }}>
+            <button
+              className={`tab${streamingOnly && services.length ? " tab-active" : ""}`}
+              aria-pressed={streamingOnly}
+              onClick={toggleStreaming}
+              style={streamingOnly && services.length === 0 ? { border: "1px solid var(--gold)", color: "var(--gold)" } : undefined}
+            >
+              <span aria-hidden="true">📺</span> My services only
+            </button>
+            {streamingOnly && STREAMING_PROVIDERS.map((p) => (
+              <button
+                key={p.id}
+                className={`chip${services.includes(p.id) ? " chip-active" : ""}`}
+                aria-pressed={services.includes(p.id)}
+                onClick={() => toggleService(p.id)}
+              >
+                {p.label}
+              </button>
+            ))}
+            {streamingOnly && services.length === 0 && (
+              <span style={{ color: "var(--gold)", fontSize: "0.75rem", fontWeight: 600 }}>
+                ← pick your services (filter is off until you do)
+              </span>
+            )}
+          </div>
+        </>
+      )}
 
       <div className="content-fade-in" onKeyDown={gridArrowNav} style={{
         display: "grid",

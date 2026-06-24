@@ -13,6 +13,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from groq import Groq
 import httpx
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
@@ -24,6 +25,7 @@ from backend.models import (
 from backend import dna as dna_mod
 from backend import scoring
 from backend import features
+from backend import group as group_mod
 
 router = APIRouter()
 logger = logging.getLogger("movienight.recommendations")
@@ -640,28 +642,131 @@ async def _ensure_dna(db: Session, groq_key: Optional[str],
 
 
 def _nearest_loved_anchor(cand_axes: Dict[str, float],
-                          loved_dna: List[Tuple[str, Dict[str, float]]]) -> Optional[str]:
-    """Deterministic anchor: the loved film whose DNA is closest to this candidate."""
-    best, best_d = None, 2.0
+                          loved_dna: List[Tuple[str, Dict[str, float]]],
+                          used: Optional[Dict[str, int]] = None,
+                          spread: float = 0.12) -> Optional[str]:
+    """Deterministic anchor: the loved film whose DNA is closest to this candidate. `used` (a
+    counter of how often each title has already been used as an anchor) nudges the choice toward
+    a less-repeated loved film when distances are comparable, so the strip doesn't keep naming the
+    same one or two favorites (QA-ANCHOR)."""
+    best, best_score = None, 1e9
     for title, axes in loved_dna:
-        d = dna_mod.dna_distance(cand_axes, axes)
-        if d < best_d:
-            best, best_d = title, d
+        score = dna_mod.dna_distance(cand_axes, axes) + spread * (used.get(title, 0) if used else 0)
+        if score < best_score:
+            best, best_score = title, score
     return best
+
+
+def _diversify_anchors(picks: List[dict], loved_dna: List[Tuple[str, Dict[str, float]]]) -> None:
+    """Reassign anchors across the final picks (in order), spreading them over the loved set."""
+    if not loved_dna:
+        return
+    used: Dict[str, int] = {}
+    for p in picks:
+        a = _nearest_loved_anchor(p.get("dna") or {}, loved_dna, used) or p.get("anchor")
+        p["anchor"] = a
+        if a:
+            used[a] = used.get(a, 0) + 1
+
+
+def _ensure_recency(picks: List[dict], scored: List[dict],
+                    min_recent: int = 1, window: int = 4) -> None:
+    """Guarantee at least `min_recent` recent (last `window` years) picks. The learned ranker gave
+    `freshness` a negative weight on this user's data, so without this the set skews old; swap the
+    lowest-scoring non-recent pick(s) for the best recent candidate(s) (QA-FRESH). Mutates `picks`."""
+    cutoff = datetime.utcnow().year - window
+
+    def is_recent(m: dict) -> bool:
+        return isinstance(m.get("year"), int) and m["year"] >= cutoff
+
+    if sum(1 for p in picks if is_recent(p)) >= min_recent:
+        return
+    pick_ids = {p["tmdb_id"] for p in picks}
+    recent_cands = sorted((c for c in scored if c["tmdb_id"] not in pick_ids and is_recent(c)),
+                          key=lambda c: c.get("score", 0), reverse=True)
+    non_recent = sorted((p for p in picks if not is_recent(p)), key=lambda p: p.get("score", 0))
+    need = min_recent - sum(1 for p in picks if is_recent(p))
+    for i in range(min(need, len(recent_cands), len(non_recent))):
+        picks[picks.index(non_recent[i])] = recent_cands[i]
 
 
 # ── Stage 5: explanations (LLM prose only — ranking is already done) ─────────
 
-def _template_reason_v2(cand: dict, anchor: Optional[str], dna_words: List[str]) -> str:
-    """DNA-aware fallback explanation when the LLM is unavailable."""
+def _matched_signal(cand: dict, profile: dict) -> Tuple[Optional[str], Optional[str]]:
+    """The strongest concrete reason this candidate matches the user, in priority order
+    (most specific first): a loved director, then actor, then theme, then genre. Returns
+    (kind, detail) or (None, None). Powers varied template explanations (QA-EXPL)."""
+    people = profile.get("people_scores", {})
+    for pid, name in cand.get("directors", []) or []:
+        if people.get(pid, 0) > 0:
+            return "director", name
+    for pid, name in cand.get("top_cast", []) or []:
+        if people.get(pid, 0) > 0:
+            return "actor", name
+    top_kw = {k.lower() for k in profile.get("top_keywords", [])}
+    cand_terms = ({t.lower() for t in (cand.get("keywords", []) or [])}
+                  | {t.lower() for t in (cand.get("themes", []) or [])})
+    common = cand_terms & top_kw
+    if common:
+        return "theme", sorted(common)[0]
+    loved_g = profile.get("loved_genres", {})
+    shared = sorted(((loved_g.get(g, 0), g) for g in cand.get("genre_ids", []) or []
+                     if loved_g.get(g, 0) > 0), reverse=True)
+    if shared:
+        gname = GENRE_MAP.get(shared[0][1])
+        if gname:
+            return "genre", gname
+    return None, None
+
+
+def _template_reason_v2(cand: dict, anchor: Optional[str], dna_words: List[str],
+                        profile: Optional[dict] = None) -> str:
+    """DNA-aware fallback explanation when the LLM is unavailable. When a profile is given,
+    the reason is keyed on the STRONGEST concrete match (director/actor/theme/genre) and phrased
+    with a deterministic variant — so twelve cards don't all read the same (QA-EXPL)."""
     traits = ", ".join(dna_words[:2])
+    va = cand.get("vote_average")
+    va_tag = f" ({va}★)" if va else ""
+    pick = cand.get("tmdb_id", 0)
+
+    def choose(opts: List[str]) -> str:
+        return opts[pick % len(opts)]
+
+    kind, detail = _matched_signal(cand, profile) if profile else (None, None)
+    if kind == "director":
+        return choose([
+            f"Directed by {detail}, whose films keep landing for you.",
+            f"Another {detail} pick — your ratings lean on their work.",
+            f"{detail} again — and your taste says that's a good thing.",
+        ])
+    if kind == "actor":
+        return choose([
+            f"Stars {detail}, who keeps showing up in films you love.",
+            f"With {detail} front and center — a face from your favorites.",
+        ])
+    if kind == "theme":
+        return choose([
+            f'A "{detail}" story — a thread that runs through what you love.',
+            f'Built on "{detail}", the kind of thing you gravitate toward.',
+        ])
+    if kind == "genre":
+        return choose([
+            f"{detail} done well{va_tag} — squarely in your wheelhouse.",
+            f"A {detail} pick that fits the films you rate highest.",
+        ])
+
+    # DNA / anchor fallback — still varied so it doesn't read as a single canned line.
     if anchor and traits:
-        return f'Shares the {traits} feel of "{anchor}" from your favorites.'
+        return choose([
+            f'Shares the {traits} feel of "{anchor}" from your favorites.',
+            f'{traits.capitalize()}, much like "{anchor}" — one of your favorites.',
+            f'For your {traits} streak, in the same orbit as "{anchor}".',
+        ])
     if anchor:
         return f'In the same vein as "{anchor}", which you loved.'
     if traits:
-        return f'A {traits} pick aligned with your taste ({cand["vote_average"]}★).'
-    return f'A highly-rated {", ".join(cand["genres"][:2]) or "pick"} ({cand["vote_average"]}★) for your taste.'
+        return f"A {traits} pick aligned with your taste{va_tag}."
+    return f'A highly-rated {", ".join(cand.get("genres", [])[:2]) or "pick"}{va_tag} for your taste.'
 
 
 def _groq_explain(picks: List[dict], profile_text: str, dna_words: List[str],
@@ -764,6 +869,7 @@ async def build_recommendations(
     mood: Optional[str] = None,
     providers: Optional[str] = None,
 ) -> dict:
+    t0 = time.time()  # QA-OBS — request latency
     ratings = db.query(Rating).all()
     if not ratings:
         return {"recommendations": [], "message": "Rate some movies first to get recommendations!", "source": "none"}
@@ -867,6 +973,8 @@ async def build_recommendations(
     if refresh == 0 and fingerprint in _cache:
         ts, cached = _cache[fingerprint]
         if now - ts < CACHE_TTL:
+            logger.info("rec served cache=hit ms=%d picks=%d",
+                        int((time.time() - t0) * 1000), len(cached.get("recommendations", [])))
             return dict(cached, source="cached")
 
     # Stage 3: candidates
@@ -962,6 +1070,8 @@ async def build_recommendations(
         c["anchor"] = _nearest_loved_anchor(c["dna"], loved_dna) or c.get("anchor")
 
     picks = scoring.select_with_buckets_mmr(scored, n=12)
+    _ensure_recency(picks, scored)        # at least one recent pick (QA-FRESH)
+    _diversify_anchors(picks, loved_dna)  # spread "Inspired by X" across loved films (QA-ANCHOR)
 
     # Stage 5: explanations (LLM prose only — ranking is already final)
     source = "tmdb"
@@ -981,7 +1091,7 @@ async def build_recommendations(
     for c in picks:
         item = {k: v for k, v in c.items() if k not in drop}
         item["explanation"] = explanations.get(c["tmdb_id"]) or _template_reason_v2(
-            c, c.get("anchor"), dna_words)
+            c, c.get("anchor"), dna_words, profile)
         out.append(item)
 
     # Log what we served: RecFeedback drives the 3-day rotation penalty; RecEvent
@@ -1027,4 +1137,165 @@ async def build_recommendations(
     }
     if refresh == 0:
         _cache[fingerprint] = (now, payload)
+    # QA-OBS — one structured line per served request: latency, prose source (ai=Groq up /
+    # tmdb=template fallback), candidate-pool size, picks, cold-start, learned-model active.
+    logger.info("rec served cache=miss ms=%d source=%s pool=%d picks=%d cold_start=%s model=%s",
+                int((time.time() - t0) * 1000), source, len(candidates), len(picks),
+                cold_start, model is not None)
     return payload
+
+
+# ── Group "Movie Night" mode (UX19) ────────────────────────────────────────────────
+
+# Bounds (QA-GB) — the per-candidate scoring loop is O(candidates × members), so cap the input
+# to keep a malicious/buggy client from turning the endpoint into a DoS.
+MAX_GROUP_MEMBERS = 10
+MAX_GROUP_RATINGS = 200
+MIN_GUEST_RATINGS = 3       # below this a guest has no usable taste signal — dropped server-side
+
+
+class GroupRatingIn(BaseModel):
+    tmdb_id: int
+    genre_ids: List[int] = Field(default_factory=list, max_length=50)
+    rating: float = Field(ge=1, le=5)
+
+
+class GroupMemberIn(BaseModel):
+    name: str = Field(max_length=60)
+    ratings: List[GroupRatingIn] = Field(default_factory=list, max_length=MAX_GROUP_RATINGS)
+
+
+class GroupRequest(BaseModel):
+    # the GUESTS; the host ("You") is loaded server-side
+    members: List[GroupMemberIn] = Field(default_factory=list, max_length=MAX_GROUP_MEMBERS)
+    providers: Optional[str] = None
+
+
+@router.post("/group")
+async def group_recommendations(body: GroupRequest, db: Session = Depends(get_db)):
+    """Blend the host's taste with one or more in-session guests into picks the whole group enjoys."""
+    # Drop guests without enough ratings to carry any taste signal (avoids zero-vector noise).
+    guests = [{"name": m.name, "ratings": [r.model_dump() for r in m.ratings]}
+              for m in body.members if len(m.ratings) >= MIN_GUEST_RATINGS]
+    return await build_group_recommendations(db, guests, providers=body.providers)
+
+
+async def build_group_recommendations(
+    db: Session, guests: List[dict], providers: Optional[str] = None,
+) -> dict:
+    """Host (DB ratings) + guests (in-session ratings) → one ranked list optimised so nobody hates
+    the pick. Reuses the whole engine; only the SCORING is per-member, then blended (group.py)."""
+    tmdb_key = os.getenv("TMDB_API_KEY")
+    groq_key = os.getenv("GROQ_API_KEY")
+    if not tmdb_key:
+        return {"recommendations": [], "message": "TMDB not configured.", "source": "error"}
+
+    host_ratings = db.query(Rating).all()
+    if not host_ratings:
+        return {"recommendations": [],
+                "message": "Rate a few movies yourself first so we have your taste to blend.",
+                "source": "none"}
+    watchlist = db.query(WatchlistItem).all()
+
+    # Host exclusions (decayed dismissals) + facets + profile (Stage 0/1, reused).
+    exclude_cutoff = datetime.utcnow() - timedelta(days=DISMISS_EXCLUDE_DAYS)
+    not_interested = db.query(RecFeedback).filter(RecFeedback.action == "not_interested").all()
+    host_dismissed = {f.tmdb_id for f in not_interested
+                      if f.created_at is None or f.created_at >= exclude_cutoff}
+
+    host_rated_ids = {r.tmdb_id for r in host_ratings}
+    facets = await _ensure_facets(db, tmdb_key, list(host_rated_ids))
+    host_profile = _build_profile(host_ratings, watchlist, facets)
+
+    # Union exclusions: nobody should be served something they (or the host) have already seen.
+    guest_seen = {int(rr["tmdb_id"]) for g in guests for rr in g.get("ratings", [])}
+    exclude = (host_rated_ids | {w.tmdb_id for w in watchlist} | host_dismissed | guest_seen)
+
+    seed = 17
+    candidates = await _candidate_pool_v2(host_profile, {}, tmdb_key, exclude,
+                                          set(), seed, None, None, providers, cold_start=False)
+    if not candidates:
+        return {"recommendations": [], "message": "No common picks found — try fewer filters.",
+                "source": "error"}
+
+    # Enrich candidates (facets + DNA), identical to the single-user path.
+    cand_ids = [c["tmdb_id"] for c in candidates]
+    # Enrich candidates + the guests' rated movies (QA-GUESTFI — gives guests people/theme affinity).
+    facets = {**facets, **await _ensure_facets(db, tmdb_key, cand_ids + list(guest_seen))}
+
+    meta_by_id: Dict[int, dict] = {}
+    for r in host_ratings:
+        try:
+            g = json.loads(r.genres) if r.genres else []
+        except Exception:
+            g = []
+        meta_by_id[r.tmdb_id] = {"title": r.title, "year": r.year, "genres": g, "overview": "",
+                                 "vote_average": 0.0, "vote_count": 0, "popularity": 0.0,
+                                 "facets": facets.get(r.tmdb_id, {})}
+    for c in candidates:
+        meta_by_id[c["tmdb_id"]] = {
+            "title": c["title"], "year": c["year"], "genres": c["genres"],
+            "overview": c.get("overview", ""), "vote_average": c.get("vote_average", 0.0),
+            "vote_count": c.get("vote_count", 0), "popularity": c.get("popularity", 0.0),
+            "facets": facets.get(c["tmdb_id"], {})}
+    dna_map = await _ensure_dna(db, groq_key, meta_by_id, host_rated_ids)
+
+    host_contrib = [(int(r.rating) - 3, dna_map.get(r.tmdb_id, {}).get("axes", {})) for r in host_ratings]
+    host_dna, host_conf = dna_mod.aggregate_profile_dna(host_contrib)
+    host_words = dna_mod.axes_to_words(host_dna, host_conf)
+    loved_dna = [(r.title, dna_map[r.tmdb_id]["axes"]) for r in host_profile["loved"]
+                 if r.tmdb_id in dna_map]
+
+    for c in candidates:
+        d = dna_map.get(c["tmdb_id"], {})
+        f = facets.get(c["tmdb_id"], {})
+        c["dna"] = d.get("axes", {})
+        c["dna_source"] = d.get("source", "proxy")
+        c["themes"] = d.get("themes", [])
+        c["directors"] = f.get("directors", [])
+        c["top_cast"] = f.get("top_cast", [])
+        c["keywords"] = f.get("keywords", [])
+
+    model = features.load_active_model(db)
+
+    # Members = host + guests; guests get a lightweight genre+proxy-DNA profile (group.py).
+    members = [{"name": "You", "profile": host_profile, "dna": host_dna, "conf": host_conf}]
+    for g in guests:
+        gp, gd, gc = group_mod.guest_profile(g.get("ratings", []), GENRE_MAP, facets)
+        members.append({"name": g.get("name") or "Guest", "profile": gp, "dna": gd, "conf": gc})
+
+    scored = [c for c in candidates
+              if (c.get("vote_average") or 0) >= scoring.QUALITY_FLOOR] or list(candidates)
+    for c in scored:
+        member_scores: List[float] = []
+        host_comps = None
+        c["_member"] = {}
+        for m in members:
+            s, comps = scoring.score_candidate(c, m["profile"], m["dna"], m["conf"], seed, model=model)
+            member_scores.append(s)
+            c["_member"][m["name"]] = s
+            if host_comps is None:
+                host_comps = comps            # bucket from the host's view (quality is member-agnostic)
+        c["score"] = group_mod.blend_scores(member_scores)
+        bucket, reason = scoring.assign_bucket(c, host_comps)
+        c["bucket"] = bucket
+        c["bucket_reason"] = reason
+        c["anchor"] = _nearest_loved_anchor(c["dna"], loved_dna) or c.get("anchor")
+
+    picks = scoring.select_with_buckets_mmr(scored, n=12)
+    _ensure_recency(picks, scored)        # at least one recent pick (QA-FRESH)
+    _diversify_anchors(picks, loved_dna)  # spread anchors across loved films (QA-ANCHOR)
+
+    member_names = [m["name"] for m in members]
+    per_member = {n: [p["_member"][n] for p in picks] for n in member_names}
+    drop = {"_score", "score", "dna", "themes", "directors", "top_cast", "keywords",
+            "genre_ids", "vote_count", "popularity", "_member"}
+    out = []
+    for c in picks:
+        item = {k: v for k, v in c.items() if k not in drop}
+        item["member_fit"] = [{"name": n, "fit": group_mod.fit_label(c["_member"][n], per_member[n])}
+                              for n in member_names]
+        item["explanation"] = _template_reason_v2(c, c.get("anchor"), host_words, host_profile)
+        out.append(item)
+
+    return {"recommendations": out, "source": "tmdb", "members": member_names, "message": None}

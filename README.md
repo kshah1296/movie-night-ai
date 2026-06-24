@@ -17,6 +17,7 @@ A bold, colorful movie‑recommendation app that learns your taste and tells you
 - **Scores everywhere** — IMDb, 🍅 Rotten Tomatoes, and Metacritic on every card and in the modal (OMDb, cached).
 - **Discover** — a **poster‑forward grid**, sort + filter drawer (genre, decade, rating, runtime, streaming provider), title search with debounce, actor/director search, infinite scroll, and shareable URL‑encoded filters.
 - **Watchlist** — built to answer *"what do I watch tonight?"*: **sort** (recently added · shortest runtime · highest rated · …), a **📺 "on my services"** filter that shows only what's streamable on your Netflix/Disney+/…, **runtime** filters, provider badges + runtime on each card, and a **🎲 Surprise me** button. Plus Up Next / Watched tabs, post‑watch ratings, remove with Undo, and a read‑only **Share** page.
+- **Movie Night (group mode)** — the app's namesake: add everyone on the couch, each rates a few films, and a **least-misery + average** blend finds one movie *nobody* hates (not a bland average). Each pick shows a per-person fit ("you: loves it · Alex: likes it"). Guests persist locally for your recurring crew.
 - **Ratings** — manage everything you've rated; these power the recommendations.
 - **Taste DNA page** — a radar of your 10 taste axes (slow‑burn ↔ fast, cerebral ↔ emotional, …) with per‑axis confidence, plus the genres, people, and themes that shape your picks. Makes the engine's model of you visible.
 - **Movie modal** — backdrop, cast, **clickable** streaming providers (deep‑link straight to Netflix/Disney+/…), trailer, and rate/watchlist actions.
@@ -137,6 +138,7 @@ movie-night-ai/
 | `GET /movies/{id}/ratings`, `GET /movies/ratings?ids=` | IMDb/RT/Metacritic scores (OMDb, cached) — single + batch |
 | `GET /movies/meta?ids=` | Runtime + streaming providers per movie (cached) — powers the watchlist sort/filter |
 | `GET /taste` | Your Taste‑DNA profile — 10 axes + confidence + top genres/people/themes (powers the Taste DNA page) |
+| `POST /recommendations/group` | Group "Movie Night" — blend the host + in‑session guests into picks everyone enjoys (least‑misery + average) |
 | `GET/POST/DELETE /ratings` | Manage ratings |
 | `GET/POST/PUT/DELETE /watchlist` | Manage the watchlist |
 | `POST/DELETE /rec_feedback` | "Not interested" signal |

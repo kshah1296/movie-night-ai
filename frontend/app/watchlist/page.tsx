@@ -57,6 +57,8 @@ export default function WatchlistPage() {
   const [runtimeFilter, setRuntimeFilter] = useState<string | null>(null);
   const [servicesOn, setServicesOn] = useState(false);
   const [services, setServices] = useState<number[]>([]);
+  const [query, setQuery] = useState("");           // QA-WLVIRT — in-list text search
+  const [visible, setVisible] = useState(48);        // QA-WLVIRT — cap rendered cards, "Show more"
 
   useEffect(() => {
     getWatchlist()
@@ -171,7 +173,9 @@ export default function WatchlistPage() {
 
   const displayed = useMemo(() => {
     const rt = RUNTIMES.find((r) => r.key === runtimeFilter);
+    const q = query.trim().toLowerCase();
     const out = statusFiltered.filter((i) => {
+      if (q && !i.title.toLowerCase().includes(q)) return false;
       if (selectedGenre && !i.genres.includes(selectedGenre)) return false;
       if (servicesOn && services.length) {
         const provs = meta[i.tmdb_id]?.providers ?? [];
@@ -197,13 +201,36 @@ export default function WatchlistPage() {
     });
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFiltered, selectedGenre, servicesOn, services, runtimeFilter, sort, meta, cardRatings]);
+  }, [statusFiltered, selectedGenre, servicesOn, services, runtimeFilter, sort, meta, cardRatings, query]);
 
   function surprise() {
     if (displayed.length === 0) return;
     const pick = displayed[Math.floor(Math.random() * displayed.length)];
-    showToast(`🎲 Tonight: "${pick.title}"`);
+    showToast(`🎲 Surprise: "${pick.title}"`);
     setModalId(pick.tmdb_id);
+  }
+
+  // QA-TONIGHT — one tap: the best *unwatched* movie that's ≤2h and (if you've picked services)
+  // streamable on them, ranked by score. The "stop scrolling, just tell me what to watch" button.
+  function tonight() {
+    const picks = items
+      .filter((i) => !i.watched)
+      .filter((i) => {
+        const run = meta[i.tmdb_id]?.runtime;
+        if (run != null && run > 120) return false;                  // ≤2h (unknown runtime allowed)
+        if (services.length) {
+          const provs = meta[i.tmdb_id]?.providers ?? [];
+          if (provs.length && !provs.some((p) => services.includes(p))) return false;  // on my services
+        }
+        return true;
+      })
+      .sort((a, b) => imdbScore(b.tmdb_id) - imdbScore(a.tmdb_id));
+    if (picks.length === 0) {
+      showToast("No ≤2h pick on your services tonight — loosen the filters or add a movie.");
+      return;
+    }
+    showToast(`🍿 Tonight: "${picks[0].title}"`);
+    setModalId(picks[0].tmdb_id);
   }
 
   return (
@@ -268,6 +295,22 @@ export default function WatchlistPage() {
             })}
           </div>
 
+          {/* QA-WLVIRT — type to find a saved movie (essential past ~30 items) */}
+          {items.length > 8 && (
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="🔍 Find in your watchlist…"
+              aria-label="Search your watchlist"
+              style={{
+                width: "100%", padding: "0.6rem 0.9rem", marginBottom: "0.75rem",
+                borderRadius: "var(--radius-sm)", background: "var(--surface)",
+                border: "1px solid var(--border-strong)", color: "var(--text-1)", fontSize: "0.9rem",
+              }}
+            />
+          )}
+
           {/* Find-a-movie-tonight controls: sort + streaming + runtime + surprise */}
           {items.length > 0 && (
             <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
@@ -297,11 +340,18 @@ export default function WatchlistPage() {
                 </button>
               ))}
               <button
+                className="btn-primary btn-sm"
+                onClick={tonight}
+                title="Best ≤2h pick on your services, ranked by score"
+                style={{ marginLeft: "auto" }}
+              >
+                🍿 Tonight
+              </button>
+              <button
                 className="btn-secondary btn-sm"
                 onClick={surprise}
                 disabled={displayed.length === 0}
                 title="Pick a random movie from this list"
-                style={{ marginLeft: "auto" }}
               >
                 🎲 Surprise me
               </button>
@@ -370,7 +420,7 @@ export default function WatchlistPage() {
           )}
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(320px, 100%), 1fr))", gap: "var(--space-5)" }}>
-            {displayed.map((item, i) => {
+            {displayed.slice(0, visible).map((item, i) => {
               return (
                 <div
                   key={item.tmdb_id}
@@ -443,6 +493,14 @@ export default function WatchlistPage() {
               );
             })}
           </div>
+
+          {displayed.length > visible && (
+            <div style={{ textAlign: "center", marginTop: "var(--space-6)" }}>
+              <button className="btn-secondary" onClick={() => setVisible((v) => v + 48)}>
+                Show more ({displayed.length - visible} more)
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>

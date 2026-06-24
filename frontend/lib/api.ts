@@ -97,13 +97,26 @@ export interface MovieDetail {
   };
 }
 
+const REQUEST_TIMEOUT_MS = 30000; // abort hung TMDB/Groq calls so a page can't spin forever (QA-TIMEOUT)
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, { cache: "no-store", ...init });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || `Request failed: ${res.status}`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${BASE}${path}`, { cache: "no-store", ...init, signal: controller.signal });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || `Request failed: ${res.status}`);
+    }
+    return res.json();
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") {
+      throw new Error("This is taking longer than usual — check your connection and try again.");
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
-  return res.json();
 }
 
 // Movies
@@ -316,3 +329,37 @@ export interface TasteProfile {
 }
 
 export const getTasteProfile = () => req<TasteProfile>("/taste/");
+
+// Group "Movie Night" mode (UX19)
+export interface GroupRating {
+  tmdb_id: number;
+  genre_ids: number[];
+  rating: number;
+}
+export interface GroupMember {
+  name: string;
+  ratings: GroupRating[];
+}
+export interface MemberFit {
+  name: string;
+  fit: string; // "loves it" | "likes it" | "it's ok"
+}
+export interface GroupRec extends Recommendation {
+  member_fit: MemberFit[];
+}
+export interface GroupResponse {
+  recommendations: GroupRec[];
+  members: string[];
+  source: string;
+  message: string | null;
+}
+
+export const getGroupRecommendations = (members: GroupMember[], providers?: number[]) =>
+  req<GroupResponse>("/recommendations/group", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      members,
+      providers: providers && providers.length ? providers.join(",") : undefined,
+    }),
+  });

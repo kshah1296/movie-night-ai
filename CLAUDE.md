@@ -68,7 +68,8 @@ FastAPI app, run from the **repo root** (the `backend/` folder is a Python packa
 | `routers/movies.py` | TMDB proxy: `/search`, `/trending`, `/discover`, `/person_search`, `/{id}`, `/{id}/providers`, `/{id}/ratings` (OMDb) + **batch** `/ratings?ids=`, **batch** `/meta?ids=` (runtime + providers) |
 | `routers/ratings.py` | `GET/POST /ratings`, **`POST /ratings/rate-and-watch`** (atomic rate + mark-watched), `DELETE /ratings/{tmdb_id}` |
 | `routers/watchlist.py` | Full CRUD + upsert on POST |
-| `routers/recommendations.py` | V3 Taste-DNA engine — `build_recommendations()` service + thin route. See Key backend details |
+| `routers/recommendations.py` | V3 Taste-DNA engine — `build_recommendations()` service + thin route. **`POST /recommendations/group`** (UX19) → `build_group_recommendations()` blends host + in-session guests. See Key backend details |
+| `group.py` | Pure module (UX19): `guest_profile()` (genre affinity + proxy DNA from a guest's in-session ratings), `blend_scores()` (**least-misery + average**), `fit_label()`. Unit-tested |
 | `routers/rec_feedback.py` | `GET/POST /rec_feedback` (not_interested), `DELETE /rec_feedback/{tmdb_id}` (Undo) |
 | `routers/events.py` | `POST /events` — logs client engagement (click/trailer/share/watchlist_add/remove/skip); `impression` is server-only |
 | `routers/analytics.py` | `GET /analytics?days=N` (CTR/conversion/acceptance/novelty/diversity), **`/analytics/eval`** (offline rec quality, M5), **`/analytics/taste-history`** (DNA timeline, M8) — backend-only |
@@ -133,6 +134,7 @@ Next.js 16 App Router. All pages are client components (`"use client"`).
 | `app/watchlist/page.tsx` | Up Next / Watched tabs, **sort** (added/oldest/shortest/rating/year/title), **📺 streaming filter** + service picker, **runtime** chips, provider badges + runtime on cards, **🎲 Surprise me**, genre chips, mark watched, post-watch rating, remove with Undo |
 | `app/ratings/page.tsx` | Grid of all rated movies — edit or remove ratings |
 | `app/taste/page.tsx` | **Taste DNA** (UX18) — SVG radar of the 10 bipolar axes (center=neg pole, edge=pos pole, dashed mid-ring=neutral, dot size=confidence) + per-axis diverging bars + top genres/people/themes. Reads `GET /taste` |
+| `app/group/page.tsx` | **Movie Night** (UX19) — add in-session guests (name + quick-rate trending films), `POST /recommendations/group` → blended picks with per-member fit chips. Guests persisted in localStorage; opens `MovieModal` on a card |
 | `app/settings/page.tsx` | **Settings** (UX4/5/8) — Dark/Light theme toggle, default streaming-services picker (shared `lib/streaming` set), and a "Not interested" management list with one-tap Restore |
 | `app/share/page.tsx` | Read-only public watchlist view — static border tiles (no hover effect) |
 | `lib/api.ts` | All fetch calls to FastAPI (`cache: "no-store"` globally). Includes `getMovieRatingsBatch()` and `logEvent()` (fire-and-forget analytics) |
@@ -154,7 +156,7 @@ Next.js 16 App Router. All pages are client components (`"use client"`).
 | `components/SkeletonCard.tsx` | Shimmer skeleton + `SkeletonGrid({ variant: "row" | "poster" })` (Discover uses `poster`) |
 | `components/PageHeader.tsx` / `EmptyState.tsx` | Shared page header (solid title) + empty/error state |
 | `components/CommandPalette.tsx` | UX1 — global ⌘K/Ctrl-K palette (mounted in layout): debounced movie+person search, ↑↓/↵ nav, jumps to Discover. Also opens via a window event from the Nav 🔍 button |
-| `components/Nav.tsx` | Sticky nav — 4 text sections (For You / Discover / Watchlist / My Ratings) + a divider + secondary **icon** tools (🧬 Taste DNA, ⚙️ Settings, 🔍 ⌘K palette trigger). `.nav-icon` style, `--nav-bg` token (themed), ⌘K hint hidden on mobile |
+| `components/Nav.tsx` | Sticky nav — text sections (For You / Movie Night / Discover / Watchlist / My Ratings) + a divider + secondary **icon** tools (🧬 Taste DNA, ⚙️ Settings, 🔍 ⌘K palette trigger). `.nav-icon` style, `--nav-bg` token (themed) |
 
 ### Styling
 Tailwind v4 — configured via `@import "tailwindcss"` and `@theme` in `globals.css` (no `tailwind.config.js`). All custom styles are in `globals.css`.
@@ -232,7 +234,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 - **Analytics**: every served rec logs an impression + predicted score; `GET /analytics` reports CTR, conversion, acceptance, prediction accuracy, novelty, diversity
 
 ### Testing & evaluation
-- Unit suite in **`tests/unit/`** (`test_dna.py`, `test_scoring.py`, `test_recommendations.py`, `test_analytics.py`, `test_eval.py`, `test_features.py`) — deterministic, no network (Groq monkeypatched). Config in `pytest.ini`. Run `venv/bin/pytest`; dev deps in `requirements-dev.txt`. Frontend: `cd frontend && npm test` (Vitest).
+- Unit suite in **`tests/unit/`** (`test_dna.py`, `test_scoring.py`, `test_recommendations.py`, `test_analytics.py`, `test_eval.py`, `test_features.py`, `test_group.py`) — deterministic, no network (Groq monkeypatched). Config in `pytest.ini`. Run `venv/bin/pytest`; dev deps in `requirements-dev.txt`. Frontend: `cd frontend && npm test` (Vitest, `*.test.ts`). **E2E:** `npm run test:e2e` (Playwright, `e2e/*.spec.ts`) — smoke test that every route renders without the error boundary + the ⌘K palette + custom 404. Needs the app running (`./start.sh`).
 - **Offline eval gate** (`backend/eval.py`, run `venv/bin/python -m backend.eval`): time-split ratings → Pearson/Spearman/NDCG@k/calibrated-RMSE. This is the **acceptance test for any ranking change** — and what `train.py` uses to decide whether a learned model ships.
 - **Offline rec eval (`backend/eval.py`, M5)** — `venv/bin/python -m backend.eval` or `GET /analytics/eval`. Time-splits ratings, scores held-out movies, reports NDCG@k + Pearson/Spearman + RMSE. **This gates rec changes** — run before/after, keep only if metrics improve. It has already gated out three hand-tuning attempts (M4, Q4, M3).
 - **Known limitation it surfaced:** the hand-tuned scorer is ~random/anti-correlated with held-out ratings — the *feature signs are wrong*, which per-term tweaks can't fix. The real fix is a **learned ranker (S1)**. See `Improvement_plans/2026-06-17-RECOMMENDATION-REVIEW-BOARD.md` and `2026-06-19-LOW-CONFIDENCE-RESEARCH.md`. **Do not ship per-term scorer tweaks without an eval win.**
