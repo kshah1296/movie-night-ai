@@ -19,6 +19,17 @@ def test_guest_profile_builds_genre_affinity():
     assert any(abs(v) > 0 for v in dna.values())
 
 
+def test_guest_profile_upgrades_to_people_and_theme_with_facets():
+    # QA-GUESTFI — when a guest's rated movies have cached facets, the profile gains people +
+    # theme affinity (not just genre+proxy).
+    ratings = [{"tmdb_id": 10, "genre_ids": [28], "rating": 5}]
+    facets = {10: {"directors": [[7, "Dir"]], "top_cast": [[8, "Actor"]], "keywords": ["heist"]}}
+    profile, _dna, _conf = guest_profile(ratings, GENRES, facets)
+    assert profile["people_scores"].get(7, 0) > 0   # director picked up
+    assert profile["people_scores"].get(8, 0) > 0   # actor picked up
+    assert "heist" in profile["top_keywords"]
+
+
 def test_blend_is_least_misery_not_naive_average():
     # Polarizing pick: one member loves it, the other hates it.
     polarizing = [1.0, 0.0]

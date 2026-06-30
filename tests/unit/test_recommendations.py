@@ -99,3 +99,67 @@ def test_template_reason_falls_back_to_quality():
     cand = {"genres": ["Drama"], "vote_average": 7.5}
     r = rec._template_reason_v2(cand, None, [])
     assert "7.5" in r
+
+
+# ── _matched_signal + profile-keyed explanations (QA-EXPL) ──
+
+def _explain_profile():
+    gid = next(iter(rec.GENRE_MAP))  # any valid genre id
+    return {"people_scores": {101: 5}, "loved_genres": {gid: 6}, "top_keywords": ["heist"]}, gid
+
+
+def test_matched_signal_prefers_director_then_actor_then_theme_then_genre():
+    profile, gid = _explain_profile()
+    director = {"directors": [[101, "Jane Doe"]], "top_cast": [[101, "Jane Doe"]],
+                "keywords": ["heist"], "genre_ids": [gid]}
+    assert rec._matched_signal(director, profile) == ("director", "Jane Doe")
+
+    actor = {"directors": [], "top_cast": [[101, "Jane Doe"]], "keywords": ["heist"], "genre_ids": [gid]}
+    assert rec._matched_signal(actor, profile) == ("actor", "Jane Doe")
+
+    theme = {"directors": [], "top_cast": [], "keywords": ["heist"], "genre_ids": [gid]}
+    assert rec._matched_signal(theme, profile) == ("theme", "heist")
+
+    genre = {"directors": [], "top_cast": [], "keywords": [], "genre_ids": [gid]}
+    assert rec._matched_signal(genre, profile)[0] == "genre"
+
+    nothing = {"directors": [], "top_cast": [], "keywords": [], "genre_ids": [-999]}
+    assert rec._matched_signal(nothing, profile) == (None, None)
+
+
+def test_template_reason_keys_on_matched_signal_when_profile_given():
+    profile, gid = _explain_profile()
+    cand = {"tmdb_id": 1, "directors": [[101, "Jane Doe"]], "top_cast": [], "keywords": [],
+            "themes": [], "genre_ids": [gid], "vote_average": 8.0}
+    r = rec._template_reason_v2(cand, "Heat", ["slow-burn"], profile)
+    assert "Jane Doe" in r  # the concrete director match, not the generic DNA line
+
+
+# ── _ensure_recency (QA-FRESH) ──
+
+def test_ensure_recency_swaps_in_a_recent_pick_when_none_present():
+    import datetime
+    cy = datetime.datetime.utcnow().year
+    picks = [{"tmdb_id": i, "year": 1990, "score": 1.0 - i * 0.1} for i in range(3)]
+    recent = {"tmdb_id": 99, "year": cy, "score": 0.4}
+    rec._ensure_recency(picks, picks + [recent])
+    assert any(p["tmdb_id"] == 99 for p in picks)
+
+
+def test_ensure_recency_is_noop_when_a_recent_pick_exists():
+    import datetime
+    cy = datetime.datetime.utcnow().year
+    picks = [{"tmdb_id": 1, "year": cy, "score": 0.9}, {"tmdb_id": 2, "year": 1990, "score": 0.8}]
+    before = [p["tmdb_id"] for p in picks]
+    rec._ensure_recency(picks, picks + [{"tmdb_id": 3, "year": cy, "score": 0.95}])
+    assert [p["tmdb_id"] for p in picks] == before
+
+
+# ── _diversify_anchors (QA-ANCHOR) ──
+
+def test_diversify_anchors_spreads_across_loved_films():
+    v = {**zero_vector(), "pace": 0.5}
+    loved = [("A", dict(v)), ("B", dict(v))]            # equidistant from the picks
+    picks = [{"tmdb_id": 1, "dna": dict(v)}, {"tmdb_id": 2, "dna": dict(v)}]
+    rec._diversify_anchors(picks, loved)
+    assert {p["anchor"] for p in picks} == {"A", "B"}  # not the same one twice

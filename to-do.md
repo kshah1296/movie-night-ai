@@ -2,6 +2,11 @@
 kanban-plugin: board
 ---
 
+> **Decision (2026-06-24): this is a personal, local-only tool — no public deployment.** The whole
+> feature set, the learned-ranker engine, group mode, and the entire QA backlog are done. The
+> **Launch-Gating (C-tier) is intentionally parked** — multi-user / auth / hosting are not needed for a
+> private tool run via `./start.sh`. Anything below is optional, for-fun future work, not owed.
+
 ## 🎯 Recommendation Quality — priority order (do top-down)
 
 From the 2026-06-17 multi-agent review board. ⭐ = the "first move" all four reviewers converged on (closes the open feedback loop + makes everything measurable). Doc IDs (Q/M/S) map back to the review.
@@ -15,7 +20,7 @@ From the 2026-06-17 multi-agent review board. ⭐ = the "first move" all four re
 - [ ] _S3 (multi-user data model + Postgres + Redis) → tracked in **Launch-Gating** as C1/C4. S5 (retention features) → tracked in **Product / UX Backlog**._
 
 
-## 🚀 Launch-Gating — required before any public multi-user launch
+## 🚀 Launch-Gating — ⏸️ PARKED BY DECISION (2026-06-24, staying local) · only revisit if going public
 
 - [x] **QA-EB** ✅ **DONE (2026-06-24)** Global error boundaries — `app/error.tsx` (route errors, with Try-again), `app/global-error.tsx` (root-layout errors, self-contained html/body), `app/not-found.tsx` (custom 404). No more white screen on a render crash. #critical #frontend #blocker
 - [x] **QA-GB** ✅ **DONE (2026-06-24)** Group endpoint bounded — Pydantic caps (≤10 members, ≤200 ratings/member, ≤50 genre_ids, rating 1–5, name ≤60) → over-limit input rejected with 422; guests with <3 ratings dropped server-side. Closes the `O(candidates × members)` DoS. #critical #backend #blocker

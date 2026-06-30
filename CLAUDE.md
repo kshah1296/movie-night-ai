@@ -4,8 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Movie Night AI — a bold, colorful movie recommendation app. **Status: MVP 2** (pushed to GitHub;
-public-facing README at repo root).
+Movie Night AI — a bold, colorful movie recommendation app. **Status: feature-complete personal tool**
+(pushed to GitHub; public-facing README at repo root). **Decision (2026-06-24): kept local/single-user,
+not deployed** — the Launch-Gating C-tier (auth/multi-user/hosting) is consciously parked; run via `./start.sh`.
 - **Frontend**: Next.js 16 + Tailwind v4 + TypeScript (`frontend/`)
 - **Backend**: FastAPI (Python 3.9) + SQLite (`backend/`)
 - **Recommendation engine (V3 — Taste DNA)**: a **deterministic** hybrid scorer ranks candidates and
@@ -234,7 +235,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 - **Analytics**: every served rec logs an impression + predicted score; `GET /analytics` reports CTR, conversion, acceptance, prediction accuracy, novelty, diversity
 
 ### Testing & evaluation
-- Unit suite in **`tests/unit/`** (`test_dna.py`, `test_scoring.py`, `test_recommendations.py`, `test_analytics.py`, `test_eval.py`, `test_features.py`, `test_group.py`) — deterministic, no network (Groq monkeypatched). Config in `pytest.ini`. Run `venv/bin/pytest`; dev deps in `requirements-dev.txt`. Frontend: `cd frontend && npm test` (Vitest, `*.test.ts`). **E2E:** `npm run test:e2e` (Playwright, `e2e/*.spec.ts`) — smoke test that every route renders without the error boundary + the ⌘K palette + custom 404. Needs the app running (`./start.sh`).
+- Unit suite in **`tests/unit/`** (`test_dna.py`, `test_scoring.py`, `test_recommendations.py`, `test_analytics.py`, `test_eval.py`, `test_features.py`, `test_group.py`) — **83 tests**, deterministic, no network (Groq monkeypatched); covers the learned ranker, recency + anchor diversity + explanation variety (QA pass), and the group blend incl. the facets upgrade. Config in `pytest.ini`. Run `venv/bin/pytest`; dev deps in `requirements-dev.txt`. Frontend: `cd frontend && npm test` (Vitest, `*.test.ts`). **E2E:** `npm run test:e2e` (Playwright, `e2e/*.spec.ts`) — smoke test that every route renders without the error boundary + the ⌘K palette + custom 404. Needs the app running (`./start.sh`).
 - **Offline eval gate** (`backend/eval.py`, run `venv/bin/python -m backend.eval`): time-split ratings → Pearson/Spearman/NDCG@k/calibrated-RMSE. This is the **acceptance test for any ranking change** — and what `train.py` uses to decide whether a learned model ships.
 - **Offline rec eval (`backend/eval.py`, M5)** — `venv/bin/python -m backend.eval` or `GET /analytics/eval`. Time-splits ratings, scores held-out movies, reports NDCG@k + Pearson/Spearman + RMSE. **This gates rec changes** — run before/after, keep only if metrics improve. It has already gated out three hand-tuning attempts (M4, Q4, M3).
 - **Known limitation it surfaced:** the hand-tuned scorer is ~random/anti-correlated with held-out ratings — the *feature signs are wrong*, which per-term tweaks can't fix. The real fix is a **learned ranker (S1)**. See `Improvement_plans/2026-06-17-RECOMMENDATION-REVIEW-BOARD.md` and `2026-06-19-LOW-CONFIDENCE-RESEARCH.md`. **Do not ship per-term scorer tweaks without an eval win.**
@@ -263,7 +264,7 @@ support, `.sr-only` loading labels, WCAG-contrast text via `--text-3`. Keep thes
 
 - **Groq free tier = 100K tokens/day**, shared across Taste-DNA scoring (≤8 movies/request), taste analysis, and explanations. **Ranking is deterministic so it never degrades** — only DNA enrichment and prose pause when exhausted (`source: "tmdb"`, template reasons, anchors still work). The DNA backlog (proxy→llm) drains across requests as tokens allow. Check usage at console.groq.com.
 - **DNA is eventually-consistent**: a fresh profile starts on deterministic proxy vectors (genre-driven) and sharpens as movies get LLM-scored over subsequent requests. Candidate director/actor affinity + the MMR director cap only bind once a candidate's facets are cached (genre/decade caps always bind).
-- **Single-profile**: ratings are global (no auth). `TasteProfile.user_id` defaults to `"local"` to future-proof multi-user. Multi-user + Postgres + auth/rate-limiting are the **launch-gating C-tier** (audit) — required before any public deploy.
+- **Single-profile by design**: ratings are global (no auth). `TasteProfile.user_id` defaults to `"local"` to future-proof multi-user. Multi-user + Postgres + auth/rate-limiting are the **launch-gating C-tier** — **intentionally deferred (2026-06-24): this stays a personal, local tool, not deployed.** Only revisit the C-tier if that decision changes.
 - **Scorer quality**: the ranker is now the **learned model (S1)** — `train.py` fit standardized-linear weights that beat the hand-tuned baseline on the eval (Pearson −0.15→+0.23, Spearman −0.24→+0.23, NDCG +0.025) and is the active model. The hand-tuned weights stay as the fallback. **Retrain (`venv/bin/python -m backend.train`) as ratings accumulate** — it only ships a new model if it still beats the gate. `eval.py`'s `vote_average`/`vote_count` are held at neutral constants, so `discovery`/`pop_penalty` have ~0 learned weight; they still vary (and matter) at serve time.
 - **Config/infra**: `settings` (pydantic-settings) drives `DATABASE_URL`/`ALLOWED_ORIGINS`; one pooled `httpx` client; `lifespan` (not `on_event`); logging via the `logging` module. Alembic for migrations.
 - **Deferred (see `to-do.md`):** embedding/ANN retrieval (S2) + principled exploration / bandits (S4); a "Not interested" management view; retention features (weekly digest, streaming alerts, Taste Profile page, group mode).

@@ -2,7 +2,7 @@
 
 A bold, colorful movie‑recommendation app that learns your taste and tells you what to watch tonight — no more 40‑minute scroll. Rate a few films you've seen, and a **Taste‑DNA** engine builds a personalized, diverse list grounded in real movie data.
 
-> **Status:** MVP 2. The recommendation engine now runs on a deterministic **Taste‑DNA** scorer with diversity buckets (the LLM only profiles + explains), every card shows IMDb/Rotten Tomatoes/Metacritic scores, and the UI has had a full design‑system + accessibility pass.
+> **Status:** Feature‑complete personal tool. The recommendation engine runs on a deterministic **Taste‑DNA** scorer + a **ranker learned from your ratings**, with diversity buckets, a recency guarantee, and varied explanations (the LLM only profiles + explains). Every card shows IMDb/Rotten Tomatoes/Metacritic scores; there's a **Group "Movie Night"** mode, a **Taste‑DNA radar**, a ⌘K command palette, light/dark themes, and a full design‑system + accessibility pass. It runs locally via `./start.sh` — **intentionally single‑user / not deployed** (multi‑user + hosting were scoped but consciously deferred).
 
 ---
 
@@ -85,14 +85,18 @@ npm run dev          # http://localhost:3000
 ```
 
 ### Tests
-The backend has a deterministic unit suite (no network) in [`tests/unit/`](./tests/unit) covering the
-Taste‑DNA math, the hybrid scorer, bucketing + diversity caps, the taste‑profile builder, and the
-analytics metrics.
+The backend has a deterministic unit suite (no network) in [`tests/unit/`](./tests/unit) — **83 tests**
+covering the Taste‑DNA math, the learned ranker + feature extraction, the hybrid scorer, bucketing +
+diversity caps, recency + anchor diversity, explanation variety, the taste‑profile builder, the group
+blend, and the analytics/eval metrics.
 ```bash
 venv/bin/pip install -r requirements-dev.txt
-venv/bin/pytest                                  # run the suite
+venv/bin/pytest                                  # backend unit suite (83 tests)
 venv/bin/pytest --cov=backend --cov-report=term-missing   # with coverage
 ```
+Frontend: `cd frontend && npm test` (Vitest unit) and `npm run test:e2e` (Playwright smoke — every route
+renders without the error boundary, the ⌘K palette opens, the custom 404 shows). The offline rec‑quality
+gate is `venv/bin/python -m backend.eval`.
 
 ---
 
@@ -158,11 +162,14 @@ Interactive docs at **http://localhost:8000/docs** while the backend runs.
 
 ---
 
-## 🗺️ Roadmap (post‑MVP) 
+## 🗺️ Roadmap
 
-- In‑app analytics dashboard (the `/analytics` data, visualized)
-- LLM movie clustering into named taste clusters
-- Decouple "rate" from "mark watched" (optional)
-- "Not interested" management view + exclusion decay
-- Multi‑item undo queue
-- Deployment (Vercel + a hosted API)
+**This is a personal, local tool — and intentionally staying that way.** Multi‑user, auth, and hosting
+were scoped (see [`Improvement_plans/`](./Improvement_plans)) but **consciously deferred**; run it with
+`./start.sh`. Shipped since MVP 2: the learned ranker, Group "Movie Night" mode, the Taste‑DNA radar,
+Settings (theme + services + "Not interested" manager with exclusion decay), the ⌘K palette, a stacking
+multi‑undo queue, and a full QA pass (error boundaries, request timeouts, recency/anchor fixes, E2E).
+
+If it ever *did* go public, the gate is the C‑tier (accounts + data isolation, capability share tokens,
+rate/budget limits, Postgres) — tracked in `to-do.md`. Possible for‑fun extras: an in‑app analytics
+dashboard, LLM clustering into named taste clusters, embedding/ANN retrieval, a bandit for exploration.
